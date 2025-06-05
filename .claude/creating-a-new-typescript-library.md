@@ -363,6 +363,15 @@ tests/
 integration-tests/    # Integration tests
 ├── setup.ts          # Integration test setup/teardown
 └── [feature].integration.test.ts  # Integration test files
+examples/             # Example usage projects (tracked in git)
+├── README.md         # Examples documentation
+├── basic/            # Basic usage example
+│   ├── package.json  # Standalone project with library dependency
+│   └── index.js      # Example usage code
+└── [specific-use-case]/  # Feature-specific examples
+    ├── package.json
+    ├── index.js
+    └── README.md
 dist/                 # Compiled output (gitignored)
 \`\`\`
 
@@ -386,7 +395,74 @@ Always run these commands to ensure code quality:
 - Node.js >= 16 required
 ```
 
-## Step 6: Git Configuration
+## Step 6: Examples Structure
+
+Create example projects to demonstrate library usage and test it as a dependency.
+
+### Create Basic Example
+```bash
+mkdir -p examples/basic
+```
+
+### examples/basic/package.json
+```json
+{
+  "name": "[library-name]-example-basic",
+  "version": "1.0.0",
+  "description": "Basic [library-name] usage example",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["[library-name]", "example", "basic"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "[library-name]": "file:../.."
+  }
+}
+```
+
+### examples/basic/index.js
+```javascript
+// Basic [library-name] Example
+const { [MainClassName] } = require('[library-name]');
+
+console.log('Basic [library-name] Example');
+
+const instance = new [MainClassName]();
+console.log(instance.hello());
+
+console.log('[library-name] basic example completed!');
+```
+
+### examples/README.md
+```markdown
+# [Library Name] Examples
+
+This directory contains example projects demonstrating how to use [library-name] as a dependency.
+
+## Available Examples
+
+### Basic Usage
+- **Path**: \`basic/\`
+- **Description**: Simple [library-name] usage example
+- **Run**: \`cd basic && npm install && npm start\`
+
+## How Examples Work
+
+Each example is a standalone Node.js project that:
+1. Has its own \`package.json\`
+2. Installs [library-name] as a dependency using \`"[library-name]": "file:../.."\`
+3. Demonstrates specific functionality
+4. Can be run independently
+
+## Testing as Dependency
+
+These examples serve as integration tests to ensure [library-name] works correctly when installed as a dependency.
+```
+
+## Step 7: Git Configuration
 
 Update .gitignore to include:
 ```
@@ -396,9 +472,12 @@ dist/
 # Coverage reports
 coverage/
 coverage-integration/
+
+# Examples node_modules (keep examples source but ignore their dependencies)
+examples/*/node_modules/
 ```
 
-## Step 7: Final Setup Commands
+## Step 8: Final Setup Commands
 
 ```bash
 # Install dependencies
@@ -412,6 +491,9 @@ npm run test:all
 
 # Check code quality
 npm run lint
+
+# Test examples
+cd examples/basic && npm install && npm start
 ```
 
 ## Notes

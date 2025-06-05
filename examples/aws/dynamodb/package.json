@@ -1,0 +1,22 @@
+{
+  "name": "cloudrx-example-aws-dynamodb",
+  "version": "1.0.0",
+  "description": "CloudRx example with AWS DynamoDB persistence",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "install-cloudrx": "npm install ../../.."
+  },
+  "keywords": [
+    "cloudrx",
+    "example",
+    "aws",
+    "dynamodb",
+    "rxjs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cloudrx": "file:../../.."
+  }
+}

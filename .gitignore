@@ -137,3 +137,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Examples node_modules (keep examples source but ignore their dependencies)
+examples/*/node_modules/
