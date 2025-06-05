@@ -63,3 +63,6 @@ Always run these commands to ensure code quality:
 - Jest for testing
 - ESLint + Prettier for code quality
 - Node.js >= 16 required
+
+### Memory Tracking
+- Keep `.claude/creating-a-new-typescript-library.md` up-to-date based on any fundamental package/structure/configuration changes we make to the project. If unsure if it's a "fundamental" project need, confirm before updating.
