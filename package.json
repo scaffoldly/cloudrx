@@ -33,7 +33,7 @@
     "typescript"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
