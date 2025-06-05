@@ -138,10 +138,27 @@ jobs:
               labels: ['bug', 'ci-failure', 'main-branch']
             });
             
-            // Add a comment mentioning @claude for investigation
+            // Add a comment with investigation details
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue.data.number,
-              body: '@claude Please investigate this CI failure on the main branch and help resolve the issues.'
+              body: 'Claude will be automatically notified to investigate this CI failure.'
+            });
+            
+            // Trigger claude workflow via workflow_dispatch
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'claude.yml',
+              ref: 'main',
+              inputs: {
+                trigger_type: 'ci_failure',
+                issue_number: issue.data.number.toString(),
+                commit_sha: context.sha,
+                failed_jobs: JSON.stringify({
+                  unit_tests: unitTestsFailed,
+                  integration_tests: integrationTestsFailed
+                })
+              }
             });
