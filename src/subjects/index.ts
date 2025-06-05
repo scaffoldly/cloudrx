@@ -1,2 +1,1 @@
-// Export all subjects here
-export {};
+export { CloudSubject, CloudSubjectConfig } from './cloud-subject';

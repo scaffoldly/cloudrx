@@ -7,7 +7,17 @@
       "Bash(npm run build:*)",
       "Bash(npm run test:integration:*)",
       "Bash(mv:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(npm install:*)",
+      "Bash(npm start)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint)",
+      "Bash(npx eslint tests:*)",
+      "Bash(docker:*)",
+      "Bash(npx jest:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run format:*)",
+      "Bash(npx prettier:*)"
     ],
     "deny": []
   }

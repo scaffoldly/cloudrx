@@ -10,6 +10,10 @@ export default {
   ],
   coverageDirectory: 'coverage-integration',
   coverageReporters: ['text', 'lcov', 'html'],
-  testTimeout: 30000,
+  testTimeout: 120000, // Increased for container startup/teardown
   verbose: true,
+  // Ensure tests run serially to avoid Docker conflicts
+  maxWorkers: 1,
+  // Bail on first failure to avoid hanging containers
+  bail: true,
 };

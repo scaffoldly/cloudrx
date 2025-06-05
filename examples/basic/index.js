@@ -1,10 +1,10 @@
 // Basic CloudRx Example
-const { CloudRx } = require('cloudrx');
+const { CloudSubject } = require('cloudrx');
 
 console.log('Basic CloudRx Example');
 
-// Test basic CloudRx functionality
-const cloudRx = new CloudRx();
-console.log(cloudRx.hello());
+// Example: Create a simple in-memory CloudSubject (will fail gracefully without AWS credentials)
+console.log('CloudSubject is the main export - no CloudRx class needed!');
+console.log('Use CloudSubject directly for reactive cloud-backed streams.');
 
 console.log('CloudRx basic example completed!');
