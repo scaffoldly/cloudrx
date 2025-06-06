@@ -1,16 +1,10 @@
 import ts from 'typescript';
 import path from 'path';
-import pino from 'pino';
-
-const logger = pino({
-  name: 'cloudrx-type-check',
-  level: 'info',
-});
 
 export function runTypeCheck(): void {
   const configPath = path.resolve(__dirname, '../../tsconfig.json');
 
-  logger.info('🔍 Running TypeScript type checking...');
+  console.log('🔍 Running TypeScript type checking...');
 
   // Read and parse the TypeScript config
   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -72,25 +66,25 @@ export function runTypeCheck(): void {
         .join('\n');
 
     if (errors.length > 0) {
-      logger.error('❌ TypeScript compilation errors:');
-      logger.error(formatDiagnostics(errors));
+      console.error('❌ TypeScript compilation errors:');
+      console.error(formatDiagnostics(errors));
 
       if (warnings.length > 0) {
-        logger.warn('⚠️  TypeScript compilation warnings:');
-        logger.warn(formatDiagnostics(warnings));
+        console.warn('⚠️  TypeScript compilation warnings:');
+        console.warn(formatDiagnostics(warnings));
       }
 
       throw new Error(
         `TypeScript found ${errors.length} error(s) and ${warnings.length} warning(s). Tests cannot proceed with type errors.`
       );
     } else if (warnings.length > 0) {
-      logger.warn('⚠️  TypeScript compilation warnings:');
-      logger.warn(formatDiagnostics(warnings));
-      logger.info(
+      console.warn('⚠️  TypeScript compilation warnings:');
+      console.warn(formatDiagnostics(warnings));
+      console.log(
         `✅ TypeScript check passed - ${warnings.length} warning(s) but no errors`
       );
     }
   } else {
-    logger.info('✅ TypeScript check passed - no issues found');
+    console.log('✅ TypeScript check passed - no issues found');
   }
 }

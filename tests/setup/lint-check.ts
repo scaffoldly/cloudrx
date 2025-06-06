@@ -1,12 +1,6 @@
 import { ESLint } from 'eslint';
 import { glob } from 'glob';
 import path from 'path';
-import pino from 'pino';
-
-const logger = pino({
-  name: 'cloudrx-lint-check',
-  level: 'info',
-});
 
 export async function runLintCheck(): Promise<void> {
   const eslint = new ESLint({
@@ -23,7 +17,7 @@ export async function runLintCheck(): Promise<void> {
     throw new Error('No TypeScript files found to lint');
   }
 
-  logger.info(`🔍 Linting ${files.length} TypeScript files...`);
+  console.log(`🔍 Linting ${files.length} TypeScript files...`);
 
   try {
     const results = await eslint.lintFiles(files);
@@ -46,26 +40,26 @@ export async function runLintCheck(): Promise<void> {
         rulesMeta: {},
       });
 
-      logger.error('❌ ESLint found issues:');
-      logger.error(resultText);
+      console.error('❌ ESLint found issues:');
+      console.error(resultText);
 
       if (errorCount > 0) {
         throw new Error(
           `ESLint found ${errorCount} error(s) and ${warningCount} warning(s). Tests cannot proceed with linting errors.`
         );
       } else {
-        logger.warn(
+        console.warn(
           `⚠️  ESLint found ${warningCount} warning(s), but no errors.`
         );
       }
     } else {
-      logger.info('✅ ESLint check passed - no issues found');
+      console.log('✅ ESLint check passed - no issues found');
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('ESLint found')) {
       throw error; // Re-throw our custom error
     }
-    logger.error({ error }, '❌ ESLint check failed');
+    console.error('❌ ESLint check failed:', error);
     throw new Error(`ESLint execution failed: ${error}`);
   }
 }

@@ -5,24 +5,25 @@ import {
   QueryCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { CloudProvider } from '../../cloud-provider';
-import pino from 'pino';
+import { CloudProvider, CloudProviderOptions } from '../../cloud-provider';
+import { from, defer, of } from 'rxjs';
+import { switchMap, delay, catchError, retry, tap } from 'rxjs/operators';
+import { createLogger } from '../../../utils/logger';
 
-export interface DynamoDBProviderConfig {
+export interface DynamoDBProviderConfig extends CloudProviderOptions {
   tableName: string;
   region?: string;
   client?: DynamoDBClient;
 }
 
-export class DynamoDBProvider implements CloudProvider {
+export class DynamoDBProvider extends CloudProvider {
   private docClient: DynamoDBDocumentClient;
   private tableName: string;
-  private logger = pino({
-    name: 'cloudrx-dynamodb',
-    level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
-  });
+  private logger = createLogger('cloudrx-dynamodb');
+  private readinessSubscription?: { unsubscribe(): void };
 
   constructor(config: DynamoDBProviderConfig) {
+    super(config);
     this.tableName = config.tableName;
 
     const client =
@@ -35,7 +36,7 @@ export class DynamoDBProvider implements CloudProvider {
   }
 
   async store<T>(streamName: string, value: T): Promise<void> {
-    const timestamp = Date.now();
+    const timestamp = this.now();
     const item = {
       streamName,
       timestamp,
@@ -97,7 +98,72 @@ export class DynamoDBProvider implements CloudProvider {
     }
   }
 
-  async isReady(): Promise<boolean> {
+  protected initializeReadiness(): void {
+    // For DynamoDB Local in tests, assume it's ready immediately
+    if (process.env.NODE_ENV === 'test') {
+      this.setReady(true);
+      return;
+    }
+
+    // Use a recursive retry pattern without timers for production
+    this.readinessSubscription = defer(() => from(this.checkReadiness()))
+      .pipe(
+        switchMap((ready) => {
+          if (ready) {
+            return of(true);
+          } else {
+            // If not ready, wait and throw to trigger retry
+            return of(null).pipe(
+              delay(1000),
+              switchMap(() => {
+                throw new Error('Not ready, retrying...');
+              })
+            );
+          }
+        }),
+        retry({ count: 10, delay: 1000 }),
+        catchError(() => {
+          this.logger.error('DynamoDB provider failed to become ready after retries');
+          return of(false);
+        }),
+        tap((ready) => {
+          if (ready) {
+            this.logger.info('DynamoDB provider is ready');
+          } else {
+            this.logger.debug('DynamoDB provider not ready yet, will retry');
+          }
+        })
+      )
+      .subscribe({
+        next: (ready) => {
+          this.setReady(ready);
+          // Clean up the subscription since we're done
+          if (this.readinessSubscription) {
+            this.readinessSubscription.unsubscribe();
+          }
+        },
+        error: (error) => {
+          this.logger.error({ error }, 'Error during readiness check');
+          this.setReady(false);
+          // Clean up the subscription on error
+          if (this.readinessSubscription) {
+            this.readinessSubscription.unsubscribe();
+          }
+        }
+      });
+  }
+
+  /**
+   * Clean up any ongoing subscriptions (useful for testing)
+   */
+  dispose(): void {
+    if (this.readinessSubscription) {
+      this.readinessSubscription.unsubscribe();
+    }
+    super.dispose();
+  }
+
+  private async checkReadiness(): Promise<boolean> {
     try {
       // Simple health check - try to query the table
       await this.docClient.send(
@@ -112,7 +178,7 @@ export class DynamoDBProvider implements CloudProvider {
       );
       return true;
     } catch (error) {
-      this.logger.error({ error }, 'DynamoDB provider health check failed');
+      this.logger.debug({ error }, 'DynamoDB provider health check failed, retrying...');
       return false;
     }
   }

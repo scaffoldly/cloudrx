@@ -18,6 +18,12 @@ module.exports = {
         'deprecation/deprecation': 'error',
       },
     },
+    {
+      files: ['tests/**/*.ts', 'integration-tests/**/*.ts'],
+      rules: {
+        'no-console': 'off', // Allow console.log in tests for Jest interception
+      },
+    },
   ],
   rules: {
     '@typescript-eslint/no-unused-vars': 'error',
