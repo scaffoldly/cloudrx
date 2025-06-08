@@ -25,14 +25,14 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     // Start DynamoDB Local container
     dynamoDBContainer = new DynamoDBLocalContainer();
     await dynamoDBContainer.start();
-  });
+  }, 30000);
 
   afterAll(async () => {
     // Stop DynamoDB Local container
     if (dynamoDBContainer) {
       await dynamoDBContainer.stop();
     }
-  });
+  }, 30000);
 
   beforeEach(() => {
     // Get current test name to use as stream name
