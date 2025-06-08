@@ -26,13 +26,14 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Claude Config
-        run: |
-          mkdir -p ~/.claude
-          echo '${{ secrets.CLAUDE_TOKEN }}' | jq -Rs '{primaryApiKey: .}' > ~/.claude/.config.json
+      - uses: saml-to/assume-aws-role-action@v1
+        with:
+          role: arn:aws:iam::557208059266:role/aws@scaffold.ly
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@beta
-        # with:
-        #   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          use_bedrock: true
