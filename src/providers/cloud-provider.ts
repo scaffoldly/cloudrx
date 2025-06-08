@@ -5,7 +5,9 @@ export interface CloudProviderOptions {
   timestampProvider?: TimestampProvider;
 }
 
-export abstract class CloudProvider implements TimestampProvider {
+export abstract class CloudProvider<T, Key extends string>
+  implements TimestampProvider
+{
   private timestampProvider: TimestampProvider;
   protected readySubject: AsyncSubject<boolean>;
 
@@ -21,13 +23,20 @@ export abstract class CloudProvider implements TimestampProvider {
 
   /**
    * Store a value in the cloud provider under the given stream name
+   * Returns the generated key/identifier for the stored value
    */
-  abstract store<T>(streamName: string, value: T): Promise<void>;
+  abstract store(streamName: string, key: Key, value: T): Promise<Key>;
 
   /**
    * Retrieve all values for a given stream name
    */
-  abstract all<T>(streamName: string): Promise<T[]>;
+  abstract all(streamName: string): Promise<T[]>;
+
+  /**
+   * Retrieve a single value from the cloud provider for a given stream name and key
+   * Returns the value if found, undefined otherwise
+   */
+  abstract retrieve(streamName: string, key: Key): Promise<T | undefined>;
 
   /**
    * Observable that emits true when the provider is ready, completes immediately after
@@ -85,15 +94,21 @@ export abstract class CloudProvider implements TimestampProvider {
    * This method implements the store-verify pattern for data integrity
    * Returns an Observable that emits the value only after verification
    */
-  persist<T>(
+  persist(
     streamName: string,
+    key: Key,
     value: T,
     emitCallback: (value: T) => void
   ): Observable<boolean> {
     return this.isReady().pipe(
       switchMap((ready) => {
         if (ready) {
-          return this.attemptStoreAndVerify(streamName, value, emitCallback);
+          return this.attemptStoreAndVerify(
+            streamName,
+            key,
+            value,
+            emitCallback
+          );
         } else {
           throw new Error('Provider is not ready');
         }
@@ -114,19 +129,20 @@ export abstract class CloudProvider implements TimestampProvider {
   /**
    * Internal method to attempt store and verify operation
    */
-  private attemptStoreAndVerify<T>(
+  private attemptStoreAndVerify(
     streamName: string,
+    key: Key,
     value: T,
     emitCallback: (value: T) => void
   ): Observable<boolean> {
     // Step 1: Store the value with timeout
-    return from(this.store(streamName, value)).pipe(
+    return from(this.store(streamName, key, value)).pipe(
       timeout(5000), // 5 second timeout for store operation
       // Step 2: Small delay to allow for eventual consistency
       switchMap(() => of(null).pipe(delay(100))),
       // Step 3: Retrieve to verify storage with timeout
       switchMap(() =>
-        from(this.all<T>(streamName)).pipe(
+        from(this.all(streamName)).pipe(
           timeout(5000) // 5 second timeout for retrieve operation
         )
       ),
@@ -144,7 +160,7 @@ export abstract class CloudProvider implements TimestampProvider {
           // If not found, wait a bit longer and try retrieve again (eventual consistency)
           return of(null).pipe(
             delay(500),
-            switchMap(() => from(this.all<T>(streamName))),
+            switchMap(() => from(this.all(streamName))),
             switchMap((secondRetrieve) => {
               const secondCheck = this.verifyValueInRetrievedData(
                 value,
@@ -169,10 +185,7 @@ export abstract class CloudProvider implements TimestampProvider {
   /**
    * Verify that a value exists in the retrieved data
    */
-  private verifyValueInRetrievedData<T>(
-    value: T,
-    retrievedValues: T[]
-  ): boolean {
+  private verifyValueInRetrievedData(value: T, retrievedValues: T[]): boolean {
     // Simple verification - check if the value exists in the retrieved data
     // For objects, we'll do a deep comparison of the last few items
     if (retrievedValues.length === 0) {

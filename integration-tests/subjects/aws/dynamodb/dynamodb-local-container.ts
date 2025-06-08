@@ -105,11 +105,11 @@ export class DynamoDBLocalContainer {
           TableName: 'integration-test-table',
           KeySchema: [
             { AttributeName: 'streamName', KeyType: 'HASH' },
-            { AttributeName: 'sortKey', KeyType: 'RANGE' },
+            { AttributeName: 'key', KeyType: 'RANGE' },
           ],
           AttributeDefinitions: [
             { AttributeName: 'streamName', AttributeType: 'S' },
-            { AttributeName: 'sortKey', AttributeType: 'S' },
+            { AttributeName: 'key', AttributeType: 'S' },
           ],
           BillingMode: 'PAY_PER_REQUEST',
         })

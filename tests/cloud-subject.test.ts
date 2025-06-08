@@ -68,19 +68,25 @@ describe('CloudSubject', () => {
   });
 
   it('should emit values to subscribers', (done) => {
-    const cloudSubject = new CloudSubject<string>('test-stream', {
+    interface TestMessage {
+      message: string;
+    }
+
+    const cloudSubject = new CloudSubject<TestMessage>('test-stream', {
       type: 'aws-dynamodb',
       tableName: 'test-table',
       replayOnSubscribe: false, // Disable replay for this test
       logger: mockLogger,
     });
 
-    cloudSubject.subscribe((value: string) => {
-      expect(value).toBe('test-message');
+    const testMessage = { message: 'test-message' };
+
+    cloudSubject.subscribe((value: TestMessage) => {
+      expect(value).toEqual(testMessage);
       done();
     });
 
-    cloudSubject.next('test-message');
+    cloudSubject.next(testMessage);
   }, 10000);
 
   it('should demonstrate Jest console.log interception', () => {

@@ -16,7 +16,7 @@ interface TestData {
 
 describe('DynamoDB CloudSubject Integration Tests', () => {
   let cloudSubject: CloudSubject<TestData>;
-  let dynamoDBProvider: DynamoDBProvider;
+  let dynamoDBProvider: DynamoDBProvider<TestData>;
   let dynamoDBContainer: DynamoDBLocalContainer;
   let mockLogger: pino.Logger;
   let currentTestName: string;
@@ -43,7 +43,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     mockLogger = createLogger('test-logger', 'error');
 
     // Create a provider that uses the local DynamoDB instance
-    dynamoDBProvider = new DynamoDBProvider({
+    dynamoDBProvider = new DynamoDBProvider<TestData>({
       tableName: 'integration-test-table',
       client: dynamoDBContainer.getClient(),
     });

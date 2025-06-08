@@ -16,7 +16,10 @@ export interface DynamoDBProviderConfig extends CloudProviderOptions {
   client?: DynamoDBClient;
 }
 
-export class DynamoDBProvider extends CloudProvider {
+export class DynamoDBProvider<
+  T,
+  Key extends string = string,
+> extends CloudProvider<T, Key> {
   private docClient: DynamoDBDocumentClient;
   private tableName: string;
   private logger = createLogger('cloudrx-dynamodb');
@@ -35,12 +38,13 @@ export class DynamoDBProvider extends CloudProvider {
     this.docClient = DynamoDBDocumentClient.from(client);
   }
 
-  async store<T>(streamName: string, value: T): Promise<void> {
+  async store(streamName: string, key: Key, value: T): Promise<Key> {
     const timestamp = this.now();
+    const sortKey = `${timestamp}#${key}#${Math.random().toString(36).substring(7)}`;
     const item = {
       streamName,
       timestamp,
-      sortKey: `${timestamp}#${Math.random().toString(36).substring(7)}`,
+      key: sortKey,
       data: value,
       ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 days TTL
     };
@@ -51,9 +55,11 @@ export class DynamoDBProvider extends CloudProvider {
         Item: item,
       })
     );
+
+    return sortKey as Key;
   }
 
-  async all<T>(streamName: string): Promise<T[]> {
+  async all(streamName: string): Promise<T[]> {
     const command = new QueryCommand({
       TableName: this.tableName,
       KeyConditionExpression: 'streamName = :streamName',
@@ -69,33 +75,25 @@ export class DynamoDBProvider extends CloudProvider {
     );
   }
 
-  async clear(streamName: string): Promise<void> {
-    // First, get all items for this stream
-    const items = await this.docClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: 'streamName = :streamName',
-        ExpressionAttributeValues: {
-          ':streamName': streamName,
-        },
-        ProjectionExpression: 'streamName, sortKey',
-      })
-    );
+  async retrieve(streamName: string, key: Key): Promise<T | undefined> {
+    const command = new QueryCommand({
+      TableName: this.tableName,
+      KeyConditionExpression: 'streamName = :streamName AND #key = :key',
+      ExpressionAttributeNames: {
+        '#key': 'key',
+      },
+      ExpressionAttributeValues: {
+        ':streamName': streamName,
+        ':key': key,
+      },
+      Limit: 1,
+    });
 
-    // Delete each item
-    if (items.Items && items.Items.length > 0) {
-      for (const item of items.Items) {
-        await this.docClient.send(
-          new DeleteCommand({
-            TableName: this.tableName,
-            Key: {
-              streamName: item.streamName,
-              sortKey: item.sortKey,
-            },
-          })
-        );
-      }
+    const result = await this.docClient.send(command);
+    if (result.Items && result.Items.length > 0 && result.Items[0]) {
+      return result.Items[0].data as T;
     }
+    return undefined;
   }
 
   protected initializeReadiness(): void {

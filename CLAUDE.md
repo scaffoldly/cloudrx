@@ -158,9 +158,10 @@ Always run these commands to ensure code quality:
 **COMPLETION CHECKLIST**:
 
 1. Update CLAUDE.md with architecture/patterns learned
-2. Run `npm run test:all` and verify ALL tests pass
-3. Ensure Jest exits cleanly without open handles
-4. Only then consider objective complete
+2. Run `npm run lint:fix` to fix any linting issues
+3. Run `npm run test:all` and verify ALL tests pass
+4. Ensure Jest exits cleanly without open handles
+5. Only then consider objective complete
 
 ### Architecture Evolution
 

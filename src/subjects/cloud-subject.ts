@@ -28,8 +28,8 @@ export interface CloudSubjectS3Config extends CloudSubjectConfig {
   region?: string;
 }
 
-export class CloudSubject<T> extends Subject<T> {
-  private provider: CloudProvider;
+export class CloudSubject<T, Key extends string = string> extends Subject<T> {
+  private provider: CloudProvider<T, Key>;
   private streamName: string;
   private replayOnSubscribe: boolean;
   private logger: pino.Logger;
@@ -47,10 +47,10 @@ export class CloudSubject<T> extends Subject<T> {
 
   private createProvider(
     config: CloudSubjectDynamoDBConfig | CloudSubjectS3Config
-  ): CloudProvider {
+  ): CloudProvider<T, Key> {
     switch (config.type) {
       case 'aws-dynamodb':
-        return new DynamoDBProvider({
+        return new DynamoDBProvider<T, Key>({
           tableName: config.tableName,
           ...(config.region && { region: config.region }),
           ...(config.client && { client: config.client }),
@@ -64,9 +64,13 @@ export class CloudSubject<T> extends Subject<T> {
   }
 
   public next(value: T): void {
+    // Generate a key for this value
+    const key =
+      `${Date.now()}-${Math.random().toString(36).substring(7)}` as Key;
+
     // Use the provider's persist method for store-then-verify-then-emit pattern
     this.provider
-      .persist(this.streamName, value, (verifiedValue) => {
+      .persist(this.streamName, key, value, (verifiedValue: T) => {
         super.next(verifiedValue);
       })
       .subscribe({
@@ -118,7 +122,7 @@ export class CloudSubject<T> extends Subject<T> {
       .pipe(
         switchMap((ready) => {
           if (ready) {
-            return from(this.provider.all<T>(this.streamName));
+            return from(this.provider.all(this.streamName));
           } else {
             throw new Error('Provider is not ready');
           }
@@ -131,7 +135,7 @@ export class CloudSubject<T> extends Subject<T> {
           return of([]); // Continue operation - subscriber will still get new events
         })
       )
-      .subscribe((events) => {
+      .subscribe((events: T[]) => {
         events.forEach((event: T) => super.next(event));
       });
   }
