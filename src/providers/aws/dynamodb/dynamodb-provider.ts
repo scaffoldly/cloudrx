@@ -3,7 +3,6 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
-  DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { CloudProvider, CloudProviderOptions } from '../../cloud-provider';
 import { from, defer, of } from 'rxjs';
