@@ -34,6 +34,7 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
   private streamName: string;
   private replayOnSubscribe: boolean;
   private logger: pino.Logger;
+  private subscriptions: Subscription[] = [];
 
   constructor(
     streamName: string,
@@ -71,15 +72,18 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
       `${Date.now()}-${Math.random().toString(36).substring(7)}` as Key;
 
     // Use the provider's persist method for store-then-verify-then-emit pattern
-    this.provider.persist(this.streamName, key, value).subscribe({
-      next: (verifiedValue: T) => {
-        super.next(verifiedValue);
-      },
-      error: (err) => {
-        // Propagate all errors to subscribers
-        this.error(err);
-      },
-    });
+    const subscription = this.provider
+      .persist(this.streamName, key, value)
+      .subscribe({
+        next: (verifiedValue: T) => {
+          super.next(verifiedValue);
+        },
+        error: (err) => {
+          // Propagate all errors to subscribers
+          this.error(err);
+        },
+      });
+    this.subscriptions.push(subscription);
   }
 
   public subscribe(
@@ -119,7 +123,7 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
   }
 
   private async replayPersistedEvents(): Promise<void> {
-    this.provider
+    const subscription = this.provider
       .isReady()
       .pipe(
         switchMap((ready) => {
@@ -140,12 +144,27 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
       .subscribe((events: T[]) => {
         events.forEach((event: T) => super.next(event));
       });
+    this.subscriptions.push(subscription);
   }
 
   /**
    * Clean up CloudSubject resources
    */
   public dispose(): void {
+    // Unsubscribe from all subscriptions
+    this.subscriptions.forEach((subscription) => {
+      if (!subscription.closed) {
+        subscription.unsubscribe();
+      }
+    });
+    this.subscriptions.length = 0;
+
+    // Dispose of the provider
+    if (this.provider) {
+      this.provider.dispose();
+    }
+
+    // Complete the subject
     this.complete();
   }
 }

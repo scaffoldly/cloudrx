@@ -20,6 +20,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
   let dynamoDBContainer: DynamoDBLocalContainer;
   let mockLogger: pino.Logger;
   let currentTestName: string;
+  const additionalSubjects: CloudSubject<TestData>[] = [];
 
   beforeAll(async () => {
     // Start DynamoDB Local container
@@ -64,6 +65,12 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
       cloudSubject.dispose();
     }
 
+    // Dispose of any additional subjects created in tests
+    additionalSubjects.forEach((subject) => {
+      subject.dispose();
+    });
+    additionalSubjects.length = 0;
+
     // Clean up provider subscriptions
     if (dynamoDBProvider) {
       try {
@@ -97,6 +104,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
       replayOnSubscribe: true,
       logger: mockLogger,
     });
+    additionalSubjects.push(replaySubject);
 
     const replayedValues: TestData[] = [];
 
@@ -170,6 +178,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
       client: dynamoDBContainer.getClient(),
       logger: silentLogger,
     });
+    additionalSubjects.push(badSubject);
 
     const values: TestData[] = [];
     let errorReceived = false;

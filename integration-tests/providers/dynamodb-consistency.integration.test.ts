@@ -7,6 +7,7 @@ const currentTestName = 'dynamodb-consistency-integration-test';
 describe('DynamoDB Provider Consistency Integration Tests', () => {
   let container: DynamoDBLocalContainer;
   const logger = createLogger('test-logger', 'error');
+  const cloudSubjects: CloudSubject<unknown>[] = [];
 
   beforeAll(async () => {
     console.log(
@@ -15,6 +16,14 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
     container = new DynamoDBLocalContainer();
     await container.start();
   }, 30000);
+
+  afterEach(async () => {
+    // Dispose of all CloudSubject instances to prevent memory leaks
+    cloudSubjects.forEach((subject) => {
+      subject.dispose();
+    });
+    cloudSubjects.length = 0;
+  });
 
   afterAll(async () => {
     if (container) {
@@ -35,6 +44,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const testData = { test: 'none-consistency', timestamp: Date.now() };
       const emittedValues: unknown[] = [];
@@ -72,6 +82,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const testData = { test: 'none-consistency-fail', timestamp: Date.now() };
       const emittedValues: unknown[] = [];
@@ -112,6 +123,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const testData = { test: 'weak-consistency', timestamp: Date.now() };
       const emittedValues: unknown[] = [];
@@ -149,6 +161,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const values = [
         { test: 'weak-1', order: 1 },
@@ -195,6 +208,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const testData = { test: 'strong-consistency' };
       let errorCaught = false;
@@ -236,6 +250,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
         client: container.getClient(),
         logger,
       });
+      cloudSubjects.push(cloudSubject);
 
       const testData = { test: 'default-consistency', timestamp: Date.now() };
       const emittedValues: unknown[] = [];
