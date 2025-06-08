@@ -147,14 +147,18 @@ jobs:
             });
 
             // Add a comment with investigation details using specific token
-            const { Octokit } = require('@octokit/rest');
-            const octokit = new Octokit({
-              auth: '${{ secrets.COMMENT_BOT_TOKEN }}'
+            const response = await fetch(`https://api.github.com/repos/${context.repo.owner}/${context.repo.repo}/issues/${issue.data.number}/comments`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ${{ secrets.COMMENT_BOT_TOKEN }}',
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                body: '@claude Please investigate this CI failure.'
+              })
             });
-
-            await octokit.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.data.number,
-              body: '@claude Please investigate this CI failure.'
-            });
+            
+            if (!response.ok) {
+              throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
+            }
