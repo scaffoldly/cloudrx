@@ -30,7 +30,7 @@ export class DynamoDBProvider<
     const client =
       config.client ||
       new DynamoDBClient({
-        region: config.region || 'us-east-1',
+        region: config.region || process.env.AWS_REGION || 'us-east-1',
       });
 
     this.docClient = DynamoDBDocumentClient.from(client);
