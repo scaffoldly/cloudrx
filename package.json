@@ -113,8 +113,7 @@
         ],
         "coverageDirectory": "coverage-integration",
         "maxWorkers": 1,
-        "detectOpenHandles": true,
-        "testTimeout": 30000
+        "detectOpenHandles": true
       }
     ]
   }
