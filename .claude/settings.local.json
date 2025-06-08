@@ -16,6 +16,7 @@
       "NotebookRead",
       "NotebookEdit",
       "Bash",
+      "Bash(*)",
       "mcp__*"
     ],
     "deny": []

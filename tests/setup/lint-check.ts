@@ -1,5 +1,4 @@
 import { ESLint } from 'eslint';
-import { glob } from 'glob';
 import path from 'path';
 
 export async function runLintCheck(): Promise<void> {
@@ -7,59 +6,48 @@ export async function runLintCheck(): Promise<void> {
     cwd: path.resolve(__dirname, '../..'),
   });
 
-  // Find all TypeScript files in src, tests, and integration-tests directories
-  const files = await glob('{src,tests,integration-tests}/**/*.ts', {
-    cwd: path.resolve(__dirname, '../..'),
-    absolute: true,
-  });
+  console.log('🔍 Running ESLint check...');
 
-  if (files.length === 0) {
-    throw new Error('No TypeScript files found to lint');
-  }
+  // Use '.' to lint everything (same as 'npm run lint' which does 'eslint .')
+  const results = await eslint.lintFiles(['.']);
 
-  console.log(`🔍 Linting ${files.length} TypeScript files...`);
+  // Check if there are any errors or warnings
+  const errorCount = results.reduce(
+    (sum: number, result) => sum + result.errorCount,
+    0
+  );
+  const warningCount = results.reduce(
+    (sum: number, result) => sum + result.warningCount,
+    0
+  );
 
-  try {
-    const results = await eslint.lintFiles(files);
+  if (errorCount > 0 || warningCount > 0) {
+    // Format results manually without loadFormatter to avoid dynamic imports
+    console.error('❌ ESLint found issues:');
 
-    // Check if there are any errors or warnings
-    const errorCount = results.reduce(
-      (sum: number, result) => sum + result.errorCount,
-      0
-    );
-    const warningCount = results.reduce(
-      (sum: number, result) => sum + result.warningCount,
-      0
-    );
-
-    if (errorCount > 0 || warningCount > 0) {
-      // Format and display results
-      const formatter = await eslint.loadFormatter('stylish');
-      const resultText = await formatter.format(results, {
-        cwd: path.resolve(__dirname, '../..'),
-        rulesMeta: {},
-      });
-
-      console.error('❌ ESLint found issues:');
-      console.error(resultText);
-
-      if (errorCount > 0) {
-        throw new Error(
-          `ESLint found ${errorCount} error(s) and ${warningCount} warning(s). Tests cannot proceed with linting errors.`
-        );
-      } else {
-        console.warn(
-          `⚠️  ESLint found ${warningCount} warning(s), but no errors.`
-        );
+    for (const result of results) {
+      if (result.errorCount > 0 || result.warningCount > 0) {
+        console.error(`\n${result.filePath}:`);
+        for (const message of result.messages) {
+          const type = message.severity === 2 ? 'error' : 'warning';
+          const rule = message.ruleId ? ` ${message.ruleId}` : '';
+          console.error(
+            `  ${message.line}:${message.column}  ${type}  ${message.message}${rule}`
+          );
+        }
       }
+    }
+
+    if (errorCount > 0) {
+      console.error(`\n✖ ${errorCount} error(s), ${warningCount} warning(s)`);
+      throw new Error(
+        `ESLint found ${errorCount} error(s) and ${warningCount} warning(s). Tests cannot proceed with linting errors.`
+      );
     } else {
-      console.log('✅ ESLint check passed - no issues found');
+      console.warn(`\n⚠ ${warningCount} warning(s), 0 errors`);
+      console.warn('⚠️ ESLint found warnings, but no errors.');
     }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('ESLint found')) {
-      throw error; // Re-throw our custom error
-    }
-    console.error('❌ ESLint check failed:', error);
-    throw new Error(`ESLint execution failed: ${error}`);
+  } else {
+    console.log('✅ ESLint check passed - no issues found');
   }
 }
