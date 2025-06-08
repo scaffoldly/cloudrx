@@ -11,10 +11,10 @@ export abstract class CloudProvider implements TimestampProvider {
 
   constructor(options?: CloudProviderOptions) {
     this.timestampProvider = options?.timestampProvider || {
-      now: (): number => this.getDefaultTimestamp()
+      now: (): number => this.getDefaultTimestamp(),
     };
     this.readySubject = new AsyncSubject<boolean>();
-    
+
     // Start provider-specific readiness check
     this.initializeReadiness();
   }
@@ -90,7 +90,11 @@ export abstract class CloudProvider implements TimestampProvider {
    * This method implements the store-verify pattern for data integrity
    * Returns an Observable that emits the value only after verification
    */
-  persist<T>(streamName: string, value: T, emitCallback: (value: T) => void): Observable<boolean> {
+  persist<T>(
+    streamName: string,
+    value: T,
+    emitCallback: (value: T) => void
+  ): Observable<boolean> {
     return this.isReady().pipe(
       switchMap((ready) => {
         if (ready) {
@@ -115,19 +119,28 @@ export abstract class CloudProvider implements TimestampProvider {
   /**
    * Internal method to attempt store and verify operation
    */
-  private attemptStoreAndVerify<T>(streamName: string, value: T, emitCallback: (value: T) => void): Observable<boolean> {
+  private attemptStoreAndVerify<T>(
+    streamName: string,
+    value: T,
+    emitCallback: (value: T) => void
+  ): Observable<boolean> {
     // Step 1: Store the value with timeout
     return from(this.store(streamName, value)).pipe(
       timeout(5000), // 5 second timeout for store operation
       // Step 2: Small delay to allow for eventual consistency
       switchMap(() => of(null).pipe(delay(100))),
       // Step 3: Retrieve to verify storage with timeout
-      switchMap(() => from(this.retrieve<T>(streamName)).pipe(
-        timeout(5000) // 5 second timeout for retrieve operation
-      )),
+      switchMap(() =>
+        from(this.retrieve<T>(streamName)).pipe(
+          timeout(5000) // 5 second timeout for retrieve operation
+        )
+      ),
       // Step 4: Verify the value is in the retrieved data
       switchMap((retrievedValues) => {
-        const valueFound = this.verifyValueInRetrievedData(value, retrievedValues);
+        const valueFound = this.verifyValueInRetrievedData(
+          value,
+          retrievedValues
+        );
         if (valueFound) {
           // Step 5: Emit to subscribers only after verification
           emitCallback(value);
@@ -138,13 +151,18 @@ export abstract class CloudProvider implements TimestampProvider {
             delay(500),
             switchMap(() => from(this.retrieve<T>(streamName))),
             switchMap((secondRetrieve) => {
-              const secondCheck = this.verifyValueInRetrievedData(value, secondRetrieve);
+              const secondCheck = this.verifyValueInRetrievedData(
+                value,
+                secondRetrieve
+              );
               if (secondCheck) {
                 emitCallback(value);
                 return of(true);
               } else {
                 // This can happen due to eventual consistency or timing - not necessarily an error
-                throw new Error('Store-verify pattern: Value not immediately available after storage (eventual consistency)');
+                throw new Error(
+                  'Store-verify pattern: Value not immediately available after storage (eventual consistency)'
+                );
               }
             })
           );
@@ -156,7 +174,10 @@ export abstract class CloudProvider implements TimestampProvider {
   /**
    * Verify that a value exists in the retrieved data
    */
-  private verifyValueInRetrievedData<T>(value: T, retrievedValues: T[]): boolean {
+  private verifyValueInRetrievedData<T>(
+    value: T,
+    retrievedValues: T[]
+  ): boolean {
     // Simple verification - check if the value exists in the retrieved data
     // For objects, we'll do a deep comparison of the last few items
     if (retrievedValues.length === 0) {
@@ -165,15 +186,16 @@ export abstract class CloudProvider implements TimestampProvider {
 
     // Check the most recent values (last 5) to account for timing
     const recentValues = retrievedValues.slice(-5);
-    
+
     // For primitive values, use simple equality
     if (typeof value !== 'object' || value === null) {
       return recentValues.includes(value);
     }
 
     // For objects, do deep comparison
-    return recentValues.some(retrievedValue => 
-      JSON.stringify(retrievedValue) === JSON.stringify(value)
+    return recentValues.some(
+      (retrievedValue) =>
+        JSON.stringify(retrievedValue) === JSON.stringify(value)
     );
   }
 }

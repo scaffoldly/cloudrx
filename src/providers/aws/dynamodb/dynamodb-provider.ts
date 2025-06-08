@@ -123,7 +123,9 @@ export class DynamoDBProvider extends CloudProvider {
         }),
         retry({ count: 10, delay: 1000 }),
         catchError(() => {
-          this.logger.error('DynamoDB provider failed to become ready after retries');
+          this.logger.error(
+            'DynamoDB provider failed to become ready after retries'
+          );
           return of(false);
         }),
         tap((ready) => {
@@ -149,7 +151,7 @@ export class DynamoDBProvider extends CloudProvider {
           if (this.readinessSubscription) {
             this.readinessSubscription.unsubscribe();
           }
-        }
+        },
       });
   }
 
@@ -178,7 +180,10 @@ export class DynamoDBProvider extends CloudProvider {
       );
       return true;
     } catch (error) {
-      this.logger.debug({ error }, 'DynamoDB provider health check failed, retrying...');
+      this.logger.debug(
+        { error },
+        'DynamoDB provider health check failed, retrying...'
+      );
       return false;
     }
   }

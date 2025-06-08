@@ -65,13 +65,15 @@ export class CloudSubject<T> extends Subject<T> {
 
   public next(value: T): void {
     // Use the provider's persist method for store-then-verify-then-emit pattern
-    this.provider.persist(this.streamName, value, (verifiedValue) => {
-      super.next(verifiedValue);
-    }).subscribe({
-      error: () => {
-        // Error already handled in persist method, just prevent unhandled promise rejection
-      }
-    });
+    this.provider
+      .persist(this.streamName, value, (verifiedValue) => {
+        super.next(verifiedValue);
+      })
+      .subscribe({
+        error: () => {
+          // Error already handled in persist method, just prevent unhandled promise rejection
+        },
+      });
   }
 
   public subscribe(
@@ -123,9 +125,10 @@ export class CloudSubject<T> extends Subject<T> {
         }),
         catchError((error) => {
           // Check if this is an expected test scenario
-          const isTestErrorScenario = this.streamName.includes('error-test') || 
-                                     this.streamName.includes('non-existent');
-          
+          const isTestErrorScenario =
+            this.streamName.includes('error-test') ||
+            this.streamName.includes('non-existent');
+
           if (isTestErrorScenario) {
             this.logger.debug(
               { err: error.message, streamName: this.streamName },
@@ -168,7 +171,7 @@ export class CloudSubject<T> extends Subject<T> {
         )
         .subscribe({
           next: () => resolve(),
-          error: (error) => reject(error)
+          error: (error) => reject(error),
         });
     });
   }

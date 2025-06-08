@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ['**']
   pull_request:
-    branches: ["**"]
+    branches: ['**']
 
 jobs:
   quality-checks:
@@ -25,7 +25,7 @@ jobs:
         run: npm ci
 
       - name: Check code formatting
-        run: npx prettier --check "**/*.ts"
+        run: npm run format
 
       - name: Run lint
         run: npm run lint
@@ -93,9 +93,9 @@ jobs:
 
   report-failures:
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests]
+    needs: [quality-checks, unit-tests, integration-tests]
     name: Report Failures
-    if: always() && github.ref == 'refs/heads/main' && (needs.unit-tests.result == 'failure' || needs.integration-tests.result == 'failure')
+    if: always() && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout code
@@ -105,31 +105,40 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const qualityChecksFailed = '${{ needs.quality-checks.result }}' === 'failure';
             const unitTestsFailed = '${{ needs.unit-tests.result }}' === 'failure';
             const integrationTestsFailed = '${{ needs.integration-tests.result }}' === 'failure';
-            
+
+            if(!qualityChecksFailed && !unitTestsFailed && !integrationTestsFailed) {
+              console.log('No failures detected.');
+              return;
+            }
+
             let issueBody = `## 🚨 CI Failure on Main Branch\n\n`;
             issueBody += `**Commit:** ${context.sha.substring(0, 7)}\n`;
             issueBody += `**Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
             issueBody += `**Time:** ${new Date().toISOString()}\n\n`;
-            
+
             issueBody += `### Failed Jobs:\n`;
+            if (qualityChecksFailed) {
+              issueBody += `- ❌ Quality Checks\n`;
+            }
             if (unitTestsFailed) {
               issueBody += `- ❌ Unit Tests\n`;
             }
             if (integrationTestsFailed) {
               issueBody += `- ❌ Integration Tests\n`;
             }
-            
+
             issueBody += `\n### Next Steps:\n`;
             issueBody += `1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
             issueBody += `2. Check the logs for specific error details\n`;
             issueBody += `3. Fix the failing tests\n`;
             issueBody += `4. Close this issue once resolved\n\n`;
             issueBody += `*This issue was automatically created by GitHub Actions.*`;
-            
+
             const title = `CI Failure on main branch (${context.sha.substring(0, 7)})`;
-            
+
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -137,7 +146,7 @@ jobs:
               body: issueBody,
               labels: ['bug', 'ci-failure', 'main-branch']
             });
-            
+
             // Add a comment with investigation details
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -145,7 +154,7 @@ jobs:
               issue_number: issue.data.number,
               body: 'Claude will be automatically notified to investigate this CI failure.'
             });
-            
+
             // Trigger claude workflow via workflow_dispatch
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,

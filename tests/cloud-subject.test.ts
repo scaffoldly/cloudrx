@@ -14,22 +14,38 @@ let mockItems: unknown[] = [];
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: {
     from: jest.fn().mockReturnValue({
-      send: jest.fn().mockImplementation((command: { constructor: { name: string }; input: { Item: unknown } }) => {
-        if (command.constructor.name === 'PutCommand') {
-          // Store the item in our mock
-          mockItems.push(command.input.Item);
-          return Promise.resolve({});
-        } else if (command.constructor.name === 'QueryCommand') {
-          // Return stored items for retrieve
-          return Promise.resolve({ Items: mockItems });
-        }
-        return Promise.resolve({ Items: [] });
-      }),
+      send: jest
+        .fn()
+        .mockImplementation(
+          (command: {
+            constructor: { name: string };
+            input: { Item: unknown };
+          }) => {
+            if (command.constructor.name === 'PutCommand') {
+              // Store the item in our mock
+              mockItems.push(command.input.Item);
+              return Promise.resolve({});
+            } else if (command.constructor.name === 'QueryCommand') {
+              // Return stored items for retrieve
+              return Promise.resolve({ Items: mockItems });
+            }
+            return Promise.resolve({ Items: [] });
+          }
+        ),
     }),
   },
-  PutCommand: jest.fn().mockImplementation((input) => ({ input, constructor: { name: 'PutCommand' } })),
-  QueryCommand: jest.fn().mockImplementation((input) => ({ input, constructor: { name: 'QueryCommand' } })),
-  DeleteCommand: jest.fn().mockImplementation((input) => ({ input, constructor: { name: 'DeleteCommand' } })),
+  PutCommand: jest.fn().mockImplementation((input) => ({
+    input,
+    constructor: { name: 'PutCommand' },
+  })),
+  QueryCommand: jest.fn().mockImplementation((input) => ({
+    input,
+    constructor: { name: 'QueryCommand' },
+  })),
+  DeleteCommand: jest.fn().mockImplementation((input) => ({
+    input,
+    constructor: { name: 'DeleteCommand' },
+  })),
 }));
 
 describe('CloudSubject', () => {
@@ -39,7 +55,6 @@ describe('CloudSubject', () => {
     mockLogger = createLogger('test-logger', 'error');
     mockItems = []; // Clear mock items between tests
   });
-
 
   it('should create a CloudSubject with DynamoDB provider', () => {
     const cloudSubject = new CloudSubject('my-stream', {
@@ -71,15 +86,19 @@ describe('CloudSubject', () => {
   it('should demonstrate Jest console.log interception', () => {
     // Jest automatically intercepts console.log calls in tests
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-    
+
     console.log('🧪 This console.log is intercepted by Jest');
     console.log('📋 Jest captures this for test verification');
-    
+
     // Verify console.log was called
     expect(consoleSpy).toHaveBeenCalledTimes(2);
-    expect(consoleSpy).toHaveBeenCalledWith('🧪 This console.log is intercepted by Jest');
-    expect(consoleSpy).toHaveBeenCalledWith('📋 Jest captures this for test verification');
-    
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '🧪 This console.log is intercepted by Jest'
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '📋 Jest captures this for test verification'
+    );
+
     // Restore original console.log
     consoleSpy.mockRestore();
   });

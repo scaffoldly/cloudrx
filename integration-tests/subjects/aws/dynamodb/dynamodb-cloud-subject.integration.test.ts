@@ -80,7 +80,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
   it('should persist and replay events from cloud storage', async () => {
     console.log('💾 Testing end-to-end persistence and replay');
-    
+
     // Test end-to-end persistence and replay
     const testData = { message: 'test persistence', timestamp: Date.now() };
 
@@ -107,14 +107,16 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
     // Subscribe should trigger replay
     console.log('🔄 Testing replay with new subject...');
-    const subscription = replaySubject.subscribe((value) => replayedValues.push(value));
+    const subscription = replaySubject.subscribe((value) =>
+      replayedValues.push(value)
+    );
 
     // Wait for replay to complete
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     expect(replayedValues).toContainEqual(testData);
     console.log('✅ Replay successful: Found persisted data');
-    
+
     // Clean up subscription
     subscription.unsubscribe();
   }, 10000);
@@ -126,7 +128,9 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     const subscriber2Values: TestData[] = [];
 
     // Add first subscriber
-    const subscription1 = cloudSubject.subscribe((value) => subscriber1Values.push(value));
+    const subscription1 = cloudSubject.subscribe((value) =>
+      subscriber1Values.push(value)
+    );
 
     // Emit value
     cloudSubject.next(testData);
@@ -135,7 +139,9 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Add second subscriber (should get replay if enabled)
-    const subscription2 = cloudSubject.subscribe((value) => subscriber2Values.push(value));
+    const subscription2 = cloudSubject.subscribe((value) =>
+      subscriber2Values.push(value)
+    );
 
     // Emit another value
     const testData2 = { test: 'second-emission', id: Math.random() };
@@ -148,18 +154,20 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     expect(subscriber1Values).toContainEqual(testData);
     expect(subscriber1Values).toContainEqual(testData2);
     expect(subscriber2Values).toContainEqual(testData2);
-    
+
     // Clean up subscriptions
     subscription1.unsubscribe();
     subscription2.unsubscribe();
   }, 8000);
 
   it('should handle persistence errors gracefully', async () => {
-    console.log('🧪 Testing error handling: Intentionally using non-existent table');
-    
+    console.log(
+      '🧪 Testing error handling: Intentionally using non-existent table'
+    );
+
     // For this error test, use silent logger since errors are expected and we'll use console.log
     const silentLogger = pino({ level: 'silent' });
-    
+
     // Test with an invalid table name to trigger errors
     const badSubject = new CloudSubject<TestData>('error-test-stream', {
       type: 'aws-dynamodb',
@@ -175,15 +183,19 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     expect(() => {
       badSubject.next({ test: 'error-handling' });
     }).not.toThrow();
-    
-    console.log('🔄 Waiting for fallback emission (this will take a moment due to retries)...');
-    
+
+    console.log(
+      '🔄 Waiting for fallback emission (this will take a moment due to retries)...'
+    );
+
     // Wait for processing (longer due to retries and timeouts)
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Should still emit to subscribers despite persistence failure
     expect(values).toContainEqual({ test: 'error-handling' });
-    console.log('✅ Error handling worked: Event emitted despite storage failure');
+    console.log(
+      '✅ Error handling worked: Event emitted despite storage failure'
+    );
 
     // Clean up subscription
     subscription.unsubscribe();
@@ -211,7 +223,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
   it('should guarantee store-then-get-then-return pattern', async () => {
     console.log('🔐 Testing store-then-verify-then-emit guarantee');
-    
+
     const testData = {
       message: 'store-verify-emit test',
       timestamp: Date.now(),
