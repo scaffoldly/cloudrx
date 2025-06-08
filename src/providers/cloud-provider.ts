@@ -129,8 +129,16 @@ export abstract class CloudProvider<T, Key extends string>
    */
   private getDefaultTimestamp(): number {
     // Date.now() already returns UTC milliseconds since epoch
-    // Add high-resolution fractional component for sub-millisecond precision
-    return Date.now() + (performance.now() % 1);
+    // Add high-resolution fractional component for sub-millisecond precision if available
+    try {
+      return Date.now() + (performance.now() % 1);
+    } catch {
+      // Fallback if performance.now() is not available
+      this.logger.debug(
+        'performance.now() not available, using Date.now() only'
+      );
+      return Date.now();
+    }
   }
 
   /**
