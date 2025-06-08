@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: ['**']
 
+permissions: write-all
+
 jobs:
   quality-checks:
     runs-on: ubuntu-latest
