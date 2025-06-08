@@ -172,7 +172,15 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     });
 
     const values: TestData[] = [];
-    const subscription = badSubject.subscribe((value) => values.push(value));
+    let errorReceived = false;
+
+    const subscription = badSubject.subscribe({
+      next: (value) => values.push(value),
+      error: (error) => {
+        errorReceived = true;
+        expect(error.name).toBe('ResourceNotFoundException');
+      },
+    });
 
     // Should not throw even when persistence fails
     expect(() => {
@@ -180,16 +188,17 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     }).not.toThrow();
 
     console.log(
-      '🔄 Waiting for fallback emission (this will take a moment due to retries)...'
+      '🔄 Waiting for error to propagate (this will take a moment due to retries)...'
     );
 
     // Wait for processing (longer due to retries and timeouts)
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 12000));
 
-    // Should still emit to subscribers despite persistence failure
-    expect(values).toContainEqual({ test: 'error-handling' });
+    // Should NOT emit values when persistence fails, but should receive error
+    expect(values).toEqual([]);
+    expect(errorReceived).toBe(true);
     console.log(
-      '✅ Error handling worked: Event emitted despite storage failure'
+      '✅ Error handling worked: Error propagated, no emission on storage failure'
     );
 
     // Clean up subscription

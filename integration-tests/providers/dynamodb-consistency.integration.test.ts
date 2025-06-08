@@ -60,7 +60,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
       console.log(`✅ None consistency emitted in ${emitTime}ms`);
     });
 
-    it('should emit even if cloud storage is unavailable', async () => {
+    it('should NOT emit if cloud storage is unavailable', async () => {
       console.log('🔍 Testing none consistency with storage failure...');
 
       // Use a non-existent table to trigger failure
@@ -75,21 +75,29 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
 
       const testData = { test: 'none-consistency-fail', timestamp: Date.now() };
       const emittedValues: unknown[] = [];
+      let errorReceived = false;
 
-      cloudSubject.subscribe((value) => {
-        emittedValues.push(value);
+      cloudSubject.subscribe({
+        next: (value) => {
+          emittedValues.push(value);
+        },
+        error: (error) => {
+          errorReceived = true;
+          expect(error.name).toBe('ResourceNotFoundException');
+        },
       });
 
       cloudSubject.next(testData);
 
-      // Wait for emission
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Wait for error propagation (longer due to retries)
+      await new Promise((resolve) => setTimeout(resolve, 12000));
 
-      // Should still emit the value
-      expect(emittedValues).toContainEqual(testData);
+      // Should NOT emit the value when storage fails
+      expect(emittedValues).toEqual([]);
+      expect(errorReceived).toBe(true);
 
-      console.log('✅ None consistency emitted despite storage failure');
-    });
+      console.log('✅ None consistency correctly failed without emission');
+    }, 15000);
   });
 
   describe('weak consistency level', () => {

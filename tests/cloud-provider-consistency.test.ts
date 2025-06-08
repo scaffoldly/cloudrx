@@ -95,7 +95,7 @@ describe('CloudProvider Consistency Levels', () => {
       cloudSubject.next(testData);
     }, 10000);
 
-    it('should emit even if store fails with none consistency', (done) => {
+    it('should NOT emit if store fails with none consistency', (done) => {
       // Mock a failing store
       const failingMock = {
         send: jest.fn().mockRejectedValue(new Error('Store failed')),
@@ -114,10 +114,17 @@ describe('CloudProvider Consistency Levels', () => {
       });
 
       const testData = { value: 'test-none-consistency-failure' };
+      let emitted = false;
 
-      cloudSubject.subscribe((value) => {
-        expect(value).toEqual(testData);
-        done();
+      cloudSubject.subscribe({
+        next: () => {
+          emitted = true;
+        },
+        error: (error) => {
+          expect(error.message).toContain('Store failed');
+          expect(emitted).toBe(false);
+          done();
+        },
       });
 
       cloudSubject.next(testData);

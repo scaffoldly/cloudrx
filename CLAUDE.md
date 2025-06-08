@@ -57,24 +57,26 @@ dist/                 # Compiled output (gitignored)
 CloudRx implements a **store-then-verify-then-emit** pattern through the `CloudProvider.persist()` method to ensure data integrity:
 
 - **Guaranteed Persistence**: Values are only emitted to subscribers after successful cloud storage verification
-- **Store-Verify-Emit**: Each emission follows: 1) Store to cloud, 2) Retrieve to verify, 3) Emit to subscribers via callback
+- **Store-Verify-Emit**: Each emission follows: 1) Store to cloud, 2) Retrieve to verify, 3) Emit verified value
 - **Provider-Level Persistence**: The `persist()` method on CloudProvider encapsulates all persistence logic with proper error handling
-- **Callback Pattern**: Uses callback function to emit values only after cloud verification succeeds
-- **Fallback Emission**: If cloud storage fails after retries, values are still emitted locally to prevent blocking
+- **Observable Pattern**: Returns `Observable<T>` that emits the verified value after successful cloud storage
+- **No Fallback Emission**: If cloud storage fails, errors are logged and propagated - values are NEVER emitted without successful storage
 - **Eventual Consistency**: Handles cloud storage eventual consistency with 100ms delay and double-check verification
 - **Error Resilience**: Automatic retry (1 attempt) with 1s delay, 10s timeout for transient failures
 - **Reusable Pattern**: The persist method can be used by any cloud-backed observable implementation
 
 ### Provider Readiness Pattern
 
-CloudRx uses a reactive readiness pattern built into the abstract CloudProvider class:
+CloudRx uses a Promise-based readiness pattern built into the abstract CloudProvider class:
 
 - **Abstract Base Implementation**: `CloudProvider.isReady()` returns `Observable<boolean>` using AsyncSubject pattern
 - **AsyncSubject Behavior**: Emits the last value (true) when ready, then completes immediately
-- **Provider-Specific Logic**: Each provider implements `initializeReadiness()` with custom logic
-- **Unified Interface**: All providers share the same readiness API through `setReady(boolean)`
-- **Automatic Initialization**: Readiness check starts automatically in constructor
+- **Provider-Specific Logic**: Each provider implements `init(): Promise<boolean>` with custom logic
+- **Lazy Initialization**: `isReady()` calls `init()` only when first requested, not in constructor
+- **Logger Integration**: Pass `logger` in CloudProviderOptions for proper error logging and debugging
 - **Test Optimization**: DynamoDB provider assumes immediate readiness in test environments
+- **Error Handling**: Failed initialization logs errors, emits false, and resets readySubject for retry capability
+- **Retry on Failure**: If init() fails, readySubject is unset allowing future isReady() calls to retry initialization
 
 **Implementation Notes:**
 

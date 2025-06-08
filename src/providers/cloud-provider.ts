@@ -6,7 +6,9 @@ import {
   of,
   defer,
   timer,
+  throwError,
 } from 'rxjs';
+import pino from 'pino';
 import {
   switchMap,
   catchError,
@@ -23,24 +25,23 @@ export type ConsistencyLevel = 'none' | 'weak' | 'strong';
 export interface CloudProviderOptions {
   timestampProvider?: TimestampProvider;
   consistency?: ConsistencyLevel;
+  logger?: pino.Logger;
 }
 
 export abstract class CloudProvider<T, Key extends string>
   implements TimestampProvider
 {
   private timestampProvider: TimestampProvider;
-  protected readySubject: AsyncSubject<boolean>;
+  protected readySubject?: AsyncSubject<boolean> | undefined;
   protected consistency: ConsistencyLevel;
+  protected logger: pino.Logger;
 
   constructor(options?: CloudProviderOptions) {
     this.timestampProvider = options?.timestampProvider || {
       now: (): number => this.getDefaultTimestamp(),
     };
     this.consistency = options?.consistency || 'weak';
-    this.readySubject = new AsyncSubject<boolean>();
-
-    // Start provider-specific readiness check
-    this.initializeReadiness();
+    this.logger = options?.logger || pino({ level: 'info' });
   }
 
   /**
@@ -65,30 +66,49 @@ export abstract class CloudProvider<T, Key extends string>
   /**
    * Observable that emits true when the provider is ready, completes immediately after
    * Uses AsyncSubject pattern - emits the last value and completes
+   * Calls init() if not already initialized
    */
   isReady(): Observable<boolean> {
+    // If not already initialized, start initialization
+    if (!this.readySubject) {
+      this.readySubject = new AsyncSubject<boolean>();
+      this.init()
+        .then((ready) => {
+          if (this.readySubject) {
+            this.readySubject.next(ready);
+            this.readySubject.complete();
+            if (ready) {
+              this.logger.info('CloudProvider initialized successfully');
+            } else {
+              this.logger.warn('CloudProvider initialization returned false');
+            }
+          }
+        })
+        .catch((error) => {
+          this.logger.error({ error }, 'CloudProvider initialization failed');
+          if (this.readySubject) {
+            this.readySubject.next(false);
+            this.readySubject.complete();
+            // Unset readySubject so future calls to isReady() can retry
+            this.readySubject = undefined;
+          }
+        });
+    }
+
     return this.readySubject.asObservable();
   }
 
   /**
    * Abstract method for initializing provider-specific readiness logic
-   * Should call setReady(true) when ready or setReady(false) on failure
+   * Returns Promise<boolean> indicating if provider is ready
    */
-  protected abstract initializeReadiness(): void;
-
-  /**
-   * Set the provider readiness state and complete the subject
-   */
-  protected setReady(ready: boolean): void {
-    this.readySubject.next(ready);
-    this.readySubject.complete();
-  }
+  protected abstract init(): Promise<boolean>;
 
   /**
    * Clean up any ongoing subscriptions (useful for testing)
    */
   dispose(): void {
-    if (!this.readySubject.closed) {
+    if (this.readySubject && !this.readySubject.closed) {
       this.readySubject.complete();
     }
   }
@@ -118,12 +138,7 @@ export abstract class CloudProvider<T, Key extends string>
    * This method implements the store-verify pattern for data integrity
    * Returns an Observable that emits the value only after verification
    */
-  persist(
-    streamName: string,
-    key: Key,
-    value: T,
-    emitCallback: (value: T) => void
-  ): Observable<boolean> {
+  persist(streamName: string, key: Key, value: T): Observable<T> {
     // Check for 'strong' consistency upfront
     if (this.consistency === 'strong') {
       return of(null).pipe(
@@ -140,23 +155,26 @@ export abstract class CloudProvider<T, Key extends string>
           if (ready) {
             return from(this.store(streamName, key, value)).pipe(
               switchMap(() => {
-                emitCallback(value);
-                return of(true);
+                return of(value);
               }),
-              catchError(() => {
-                // Fallback: emit locally even if cloud storage failed
-                emitCallback(value);
-                return of(false);
+              catchError((error) => {
+                this.logger.error(
+                  { error },
+                  'CloudProvider store operation failed (none consistency)'
+                );
+                return throwError(() => error);
               })
             );
           } else {
             throw new Error('Provider is not ready');
           }
         }),
-        catchError(() => {
-          // Fallback: emit locally even if provider not ready
-          emitCallback(value);
-          return of(false);
+        catchError((error) => {
+          this.logger.error(
+            { error },
+            'CloudProvider readiness check failed (none consistency)'
+          );
+          return throwError(() => error);
         })
       );
     }
@@ -165,12 +183,7 @@ export abstract class CloudProvider<T, Key extends string>
     return this.isReady().pipe(
       switchMap((ready) => {
         if (ready) {
-          return this.attemptStoreAndVerify(
-            streamName,
-            key,
-            value,
-            emitCallback
-          );
+          return this.attemptStoreAndVerify(streamName, key, value);
         } else {
           throw new Error('Provider is not ready');
         }
@@ -179,11 +192,12 @@ export abstract class CloudProvider<T, Key extends string>
       retry({ count: 1, delay: 1000 }),
       // Overall timeout for the operation
       timeout(10000), // 10 second timeout
-      catchError(() => {
-        // Handle all errors the same way - no test-specific logic in production code
-        // Fallback: emit locally even if cloud storage failed
-        emitCallback(value);
-        return of(false);
+      catchError((error) => {
+        this.logger.error(
+          { error },
+          'CloudProvider persist operation failed (weak consistency)'
+        );
+        return throwError(() => error);
       })
     );
   }
@@ -194,9 +208,8 @@ export abstract class CloudProvider<T, Key extends string>
   private attemptStoreAndVerify(
     streamName: string,
     key: Key,
-    value: T,
-    emitCallback: (value: T) => void
-  ): Observable<boolean> {
+    value: T
+  ): Observable<T> {
     // Step 1: Store the value with timeout
     return from(this.store(streamName, key, value)).pipe(
       timeout(5000), // 5 second timeout for store operation
@@ -211,11 +224,10 @@ export abstract class CloudProvider<T, Key extends string>
           takeUntil(timer(5000)) // Stop after 5 seconds
         )
       ),
-      // Step 3: Verify the value matches and emit
+      // Step 3: Verify the value matches and return it
       switchMap((retrievedValue) => {
         if (this.valuesAreEqual(value, retrievedValue)) {
-          emitCallback(value);
-          return of(true);
+          return of(value);
         } else {
           throw new Error('Retrieved value does not match stored value');
         }
@@ -224,20 +236,49 @@ export abstract class CloudProvider<T, Key extends string>
   }
 
   /**
-   * Compare two values for equality
+   * Compare two values for equality using proper deep comparison
    */
   private valuesAreEqual(value1: T, value2: T): boolean {
-    // For primitive values, use simple equality
-    if (
-      typeof value1 !== 'object' ||
-      value1 === null ||
-      typeof value2 !== 'object' ||
-      value2 === null
-    ) {
-      return value1 === value2;
+    return this.deepEqual(value1, value2);
+  }
+
+  /**
+   * Deep equality comparison that handles property order differences
+   */
+  private deepEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+
+    if (a == null || b == null) return a === b;
+
+    if (typeof a !== typeof b) return false;
+
+    if (typeof a !== 'object') return a === b;
+
+    // Handle arrays
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!this.deepEqual(a[i], b[i])) return false;
+      }
+      return true;
     }
 
-    // For objects, do deep comparison
-    return JSON.stringify(value1) === JSON.stringify(value2);
+    if (Array.isArray(a) || Array.isArray(b)) return false;
+
+    // Handle objects
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+
+    const aKeys = Object.keys(aObj);
+    const bKeys = Object.keys(bObj);
+
+    if (aKeys.length !== bKeys.length) return false;
+
+    for (const key of aKeys) {
+      if (!bKeys.includes(key)) return false;
+      if (!this.deepEqual(aObj[key], bObj[key])) return false;
+    }
+
+    return true;
   }
 }

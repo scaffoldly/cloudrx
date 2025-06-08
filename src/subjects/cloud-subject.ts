@@ -71,22 +71,15 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
       `${Date.now()}-${Math.random().toString(36).substring(7)}` as Key;
 
     // Use the provider's persist method for store-then-verify-then-emit pattern
-    this.provider
-      .persist(this.streamName, key, value, (verifiedValue: T) => {
+    this.provider.persist(this.streamName, key, value).subscribe({
+      next: (verifiedValue: T) => {
         super.next(verifiedValue);
-      })
-      .subscribe({
-        error: (err) => {
-          // Propagate error to subscribers for strong consistency
-          if (
-            err.message &&
-            err.message.includes('Strong consistency not yet implemented')
-          ) {
-            this.error(err);
-          }
-          // Other errors are already handled in persist method
-        },
-      });
+      },
+      error: (err) => {
+        // Propagate all errors to subscribers
+        this.error(err);
+      },
+    });
   }
 
   public subscribe(
