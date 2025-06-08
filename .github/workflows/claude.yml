@@ -37,3 +37,5 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           use_bedrock: true
+        env:
+          AWS_REGION: us-east-1
