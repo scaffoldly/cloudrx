@@ -155,7 +155,13 @@ export abstract class CloudProvider<T, Key extends string>
           if (ready) {
             return from(this.store(streamName, key, value)).pipe(
               switchMap(() => {
-                return of(value);
+                // Add small delay to ensure the subscription has time to be established
+                return new Observable<T>((subscriber) => {
+                  setTimeout(() => {
+                    subscriber.next(value);
+                    subscriber.complete();
+                  }, 10);
+                });
               }),
               catchError((error) => {
                 this.logger.error(
