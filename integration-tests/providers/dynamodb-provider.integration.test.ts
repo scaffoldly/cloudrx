@@ -2,9 +2,9 @@ import { CloudSubject } from '../../src/subjects/cloud-subject';
 import { DynamoDBLocalContainer } from '../subjects/aws/dynamodb/dynamodb-local-container';
 import { createLogger } from '../../src/utils/logger';
 
-const currentTestName = 'dynamodb-consistency-integration-test';
+const currentTestName = 'dynamodb-provider-integration-test';
 
-describe('DynamoDB Provider Consistency Integration Tests', () => {
+describe('DynamoDB Provider Integration Tests', () => {
   let container: DynamoDBLocalContainer;
   const logger = createLogger('test-logger', 'error');
 
@@ -29,7 +29,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-none`, {
         type: 'aws-dynamodb',
-        tableName: 'test-table',
+        tableName: 'integration-test-table',
         consistency: 'none',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -106,7 +106,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-weak`, {
         type: 'aws-dynamodb',
-        tableName: 'test-table',
+        tableName: 'integration-test-table',
         consistency: 'weak',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -143,7 +143,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
       const streamName = `${currentTestName}-weak-consistent`;
       const cloudSubject = new CloudSubject(streamName, {
         type: 'aws-dynamodb',
-        tableName: 'test-table',
+        tableName: 'integration-test-table',
         consistency: 'weak',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -189,7 +189,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-strong`, {
         type: 'aws-dynamodb',
-        tableName: 'test-table',
+        tableName: 'integration-test-table',
         consistency: 'strong',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -230,7 +230,7 @@ describe('DynamoDB Provider Consistency Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-default`, {
         type: 'aws-dynamodb',
-        tableName: 'test-table',
+        tableName: 'integration-test-table',
         // No consistency specified
         replayOnSubscribe: false,
         client: container.getClient(),

@@ -19,7 +19,8 @@
       "Bash(npm run format:*)",
       "Bash(npx prettier:*)",
       "Bash(ls:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

@@ -58,7 +58,7 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   })),
 }));
 
-describe('CloudProvider Consistency Levels', () => {
+describe('CloudProvider', () => {
   let mockLogger: pino.Logger;
 
   beforeEach(() => {

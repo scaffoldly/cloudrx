@@ -99,30 +99,28 @@ export class DynamoDBLocalContainer {
       throw new Error('DynamoDB client not available');
     }
 
-    const tableNames = ['integration-test-table', 'test-table'];
+    const tableName = 'integration-test-table';
 
-    for (const tableName of tableNames) {
-      try {
-        await this.client.send(
-          new CreateTableCommand({
-            TableName: tableName,
-            KeySchema: [
-              { AttributeName: 'streamName', KeyType: 'HASH' },
-              { AttributeName: 'key', KeyType: 'RANGE' },
-            ],
-            AttributeDefinitions: [
-              { AttributeName: 'streamName', AttributeType: 'S' },
-              { AttributeName: 'key', AttributeType: 'S' },
-            ],
-            BillingMode: 'PAY_PER_REQUEST',
-          })
-        );
+    try {
+      await this.client.send(
+        new CreateTableCommand({
+          TableName: tableName,
+          KeySchema: [
+            { AttributeName: 'streamName', KeyType: 'HASH' },
+            { AttributeName: 'key', KeyType: 'RANGE' },
+          ],
+          AttributeDefinitions: [
+            { AttributeName: 'streamName', AttributeType: 'S' },
+            { AttributeName: 'key', AttributeType: 'S' },
+          ],
+          BillingMode: 'PAY_PER_REQUEST',
+        })
+      );
 
-        logger.info(`Created table: ${tableName}`);
-      } catch (error) {
-        logger.error({ err: error, tableName }, 'Failed to create test table');
-        throw error;
-      }
+      logger.info(`Created table: ${tableName}`);
+    } catch (error) {
+      logger.error({ err: error, tableName }, 'Failed to create test table');
+      throw error;
     }
   }
 }
