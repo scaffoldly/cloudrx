@@ -8,7 +8,7 @@ import pino from 'pino';
 
 const logger = pino({
   name: 'cloudrx-dynamodb-container',
-  level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+  level: 'info', // Always show info level for debugging
 });
 
 export class DynamoDBLocalContainer {
@@ -42,7 +42,7 @@ export class DynamoDBLocalContainer {
         },
       });
 
-      // Create test table
+      // Create default test table
       await this.createTestTable();
     } catch (error) {
       if (error instanceof Error) {
@@ -94,12 +94,16 @@ export class DynamoDBLocalContainer {
     return `http://localhost:${port}`;
   }
 
-  private async createTestTable(): Promise<void> {
+  async createCustomTable(tableName: string): Promise<void> {
+    await this.createTestTable(tableName);
+  }
+
+  private async createTestTable(customTableName?: string): Promise<void> {
     if (!this.client) {
       throw new Error('DynamoDB client not available');
     }
 
-    const tableName = 'integration-test-table';
+    const tableName = customTableName || 'integration-test-table';
 
     try {
       await this.client.send(
@@ -117,10 +121,20 @@ export class DynamoDBLocalContainer {
         })
       );
 
-      logger.info(`Created table: ${tableName}`);
-    } catch (error) {
-      logger.error({ err: error, tableName }, 'Failed to create test table');
-      throw error;
+      logger.info(`✅ Successfully created table: ${tableName}`);
+    } catch (error: unknown) {
+      // If table already exists, that's OK - just log it
+      if (error instanceof Error && error.name === 'ResourceInUseException') {
+        logger.info(`ℹ️ Table ${tableName} already exists, continuing...`);
+      } else {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        logger.error(
+          { error: errorMessage, tableName },
+          `❌ Failed to create table: ${tableName}`
+        );
+        throw error;
+      }
     }
   }
 }

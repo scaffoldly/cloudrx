@@ -14,6 +14,9 @@ describe('DynamoDB Provider Integration Tests', () => {
     );
     container = new DynamoDBLocalContainer();
     await container.start();
+
+    // Create the custom table for provider tests
+    await container.createCustomTable('dynamodb-provider-test-table');
   }, 30000);
 
   afterAll(async () => {
@@ -29,7 +32,7 @@ describe('DynamoDB Provider Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-none`, {
         type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
+        tableName: 'dynamodb-provider-test-table',
         consistency: 'none',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -106,7 +109,7 @@ describe('DynamoDB Provider Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-weak`, {
         type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
+        tableName: 'dynamodb-provider-test-table',
         consistency: 'weak',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -143,7 +146,7 @@ describe('DynamoDB Provider Integration Tests', () => {
       const streamName = `${currentTestName}-weak-consistent`;
       const cloudSubject = new CloudSubject(streamName, {
         type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
+        tableName: 'dynamodb-provider-test-table',
         consistency: 'weak',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -189,7 +192,7 @@ describe('DynamoDB Provider Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-strong`, {
         type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
+        tableName: 'dynamodb-provider-test-table',
         consistency: 'strong',
         replayOnSubscribe: false,
         client: container.getClient(),
@@ -230,7 +233,7 @@ describe('DynamoDB Provider Integration Tests', () => {
 
       const cloudSubject = new CloudSubject(`${currentTestName}-default`, {
         type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
+        tableName: 'dynamodb-provider-test-table',
         // No consistency specified
         replayOnSubscribe: false,
         client: container.getClient(),
