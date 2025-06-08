@@ -1,8 +1,28 @@
-import { Observable, TimestampProvider, AsyncSubject, from, of } from 'rxjs';
-import { switchMap, catchError, retry, delay, timeout } from 'rxjs/operators';
+import {
+  Observable,
+  TimestampProvider,
+  AsyncSubject,
+  from,
+  of,
+  defer,
+  timer,
+} from 'rxjs';
+import {
+  switchMap,
+  catchError,
+  retry,
+  timeout,
+  repeat,
+  filter,
+  take,
+  takeUntil,
+} from 'rxjs/operators';
+
+export type ConsistencyLevel = 'none' | 'weak' | 'strong';
 
 export interface CloudProviderOptions {
   timestampProvider?: TimestampProvider;
+  consistency?: ConsistencyLevel;
 }
 
 export abstract class CloudProvider<T, Key extends string>
@@ -10,11 +30,13 @@ export abstract class CloudProvider<T, Key extends string>
 {
   private timestampProvider: TimestampProvider;
   protected readySubject: AsyncSubject<boolean>;
+  protected consistency: ConsistencyLevel;
 
   constructor(options?: CloudProviderOptions) {
     this.timestampProvider = options?.timestampProvider || {
       now: (): number => this.getDefaultTimestamp(),
     };
+    this.consistency = options?.consistency || 'weak';
     this.readySubject = new AsyncSubject<boolean>();
 
     // Start provider-specific readiness check
@@ -29,12 +51,14 @@ export abstract class CloudProvider<T, Key extends string>
 
   /**
    * Retrieve all values for a given stream name
+   * Implementations should respect the consistency level when applicable
    */
   abstract all(streamName: string): Promise<T[]>;
 
   /**
    * Retrieve a single value from the cloud provider for a given stream name and key
    * Returns the value if found, undefined otherwise
+   * Implementations should respect the consistency level when applicable
    */
   abstract retrieve(streamName: string, key: Key): Promise<T | undefined>;
 
@@ -100,6 +124,44 @@ export abstract class CloudProvider<T, Key extends string>
     value: T,
     emitCallback: (value: T) => void
   ): Observable<boolean> {
+    // Check for 'strong' consistency upfront
+    if (this.consistency === 'strong') {
+      return of(null).pipe(
+        switchMap(() => {
+          throw new Error('Strong consistency not yet implemented');
+        })
+      );
+    }
+
+    // Handle 'none' consistency - just store and emit immediately
+    if (this.consistency === 'none') {
+      return this.isReady().pipe(
+        switchMap((ready) => {
+          if (ready) {
+            return from(this.store(streamName, key, value)).pipe(
+              switchMap(() => {
+                emitCallback(value);
+                return of(true);
+              }),
+              catchError(() => {
+                // Fallback: emit locally even if cloud storage failed
+                emitCallback(value);
+                return of(false);
+              })
+            );
+          } else {
+            throw new Error('Provider is not ready');
+          }
+        }),
+        catchError(() => {
+          // Fallback: emit locally even if provider not ready
+          emitCallback(value);
+          return of(false);
+        })
+      );
+    }
+
+    // Handle 'weak' consistency (default)
     return this.isReady().pipe(
       switchMap((ready) => {
         if (ready) {
@@ -138,72 +200,44 @@ export abstract class CloudProvider<T, Key extends string>
     // Step 1: Store the value with timeout
     return from(this.store(streamName, key, value)).pipe(
       timeout(5000), // 5 second timeout for store operation
-      // Step 2: Small delay to allow for eventual consistency
-      switchMap(() => of(null).pipe(delay(100))),
-      // Step 3: Retrieve to verify storage with timeout
-      switchMap(() =>
-        from(this.all(streamName)).pipe(
-          timeout(5000) // 5 second timeout for retrieve operation
+      // Step 2: Retrieve with retries for up to 5 seconds
+      switchMap((storedKey) =>
+        defer(() => from(this.retrieve(streamName, storedKey))).pipe(
+          repeat({
+            delay: 100, // 100ms delay between attempts
+          }),
+          filter((retrievedValue) => retrievedValue !== undefined), // Only emit when we have a value
+          take(1), // Take only the first successful result
+          takeUntil(timer(5000)) // Stop after 5 seconds
         )
       ),
-      // Step 4: Verify the value is in the retrieved data
-      switchMap((retrievedValues) => {
-        const valueFound = this.verifyValueInRetrievedData(
-          value,
-          retrievedValues
-        );
-        if (valueFound) {
-          // Step 5: Emit to subscribers only after verification
+      // Step 3: Verify the value matches and emit
+      switchMap((retrievedValue) => {
+        if (this.valuesAreEqual(value, retrievedValue)) {
           emitCallback(value);
           return of(true);
         } else {
-          // If not found, wait a bit longer and try retrieve again (eventual consistency)
-          return of(null).pipe(
-            delay(500),
-            switchMap(() => from(this.all(streamName))),
-            switchMap((secondRetrieve) => {
-              const secondCheck = this.verifyValueInRetrievedData(
-                value,
-                secondRetrieve
-              );
-              if (secondCheck) {
-                emitCallback(value);
-                return of(true);
-              } else {
-                // This can happen due to eventual consistency or timing - not necessarily an error
-                throw new Error(
-                  'Store-verify pattern: Value not immediately available after storage (eventual consistency)'
-                );
-              }
-            })
-          );
+          throw new Error('Retrieved value does not match stored value');
         }
       })
     );
   }
 
   /**
-   * Verify that a value exists in the retrieved data
+   * Compare two values for equality
    */
-  private verifyValueInRetrievedData(value: T, retrievedValues: T[]): boolean {
-    // Simple verification - check if the value exists in the retrieved data
-    // For objects, we'll do a deep comparison of the last few items
-    if (retrievedValues.length === 0) {
-      return false;
-    }
-
-    // Check the most recent values (last 5) to account for timing
-    const recentValues = retrievedValues.slice(-5);
-
+  private valuesAreEqual(value1: T, value2: T): boolean {
     // For primitive values, use simple equality
-    if (typeof value !== 'object' || value === null) {
-      return recentValues.includes(value);
+    if (
+      typeof value1 !== 'object' ||
+      value1 === null ||
+      typeof value2 !== 'object' ||
+      value2 === null
+    ) {
+      return value1 === value2;
     }
 
     // For objects, do deep comparison
-    return recentValues.some(
-      (retrievedValue) =>
-        JSON.stringify(retrievedValue) === JSON.stringify(value)
-    );
+    return JSON.stringify(value1) === JSON.stringify(value2);
   }
 }

@@ -66,6 +66,7 @@ export class DynamoDBProvider<
         ':streamName': streamName,
       },
       ScanIndexForward: true, // Sort by sort key ascending (chronological order)
+      ConsistentRead: this.consistency === 'weak',
     });
 
     const result = await this.docClient.send(command);
@@ -85,7 +86,7 @@ export class DynamoDBProvider<
         ':streamName': streamName,
         ':key': key,
       },
-      Limit: 1,
+      ConsistentRead: this.consistency === 'weak',
     });
 
     const result = await this.docClient.send(command);

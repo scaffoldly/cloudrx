@@ -1,7 +1,7 @@
 import { Subject, Subscription, Observer } from 'rxjs';
 import { switchMap, catchError } from 'rxjs/operators';
 import { of, from } from 'rxjs';
-import { CloudProvider } from '../providers/cloud-provider';
+import { CloudProvider, ConsistencyLevel } from '../providers/cloud-provider';
 import { DynamoDBProvider } from '../providers/aws/dynamodb';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import pino from 'pino';
@@ -13,6 +13,7 @@ export interface CloudSubjectConfig {
   type: 'aws-s3' | 'aws-dynamodb';
   replayOnSubscribe?: boolean;
   logger?: pino.Logger;
+  consistency?: ConsistencyLevel;
 }
 
 export interface CloudSubjectDynamoDBConfig extends CloudSubjectConfig {
@@ -54,6 +55,7 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
           tableName: config.tableName,
           ...(config.region && { region: config.region }),
           ...(config.client && { client: config.client }),
+          ...(config.consistency && { consistency: config.consistency }),
         });
       case 'aws-s3':
         throw new Error('S3 provider not yet implemented');
@@ -74,8 +76,15 @@ export class CloudSubject<T, Key extends string = string> extends Subject<T> {
         super.next(verifiedValue);
       })
       .subscribe({
-        error: () => {
-          // Error already handled in persist method, just prevent unhandled promise rejection
+        error: (err) => {
+          // Propagate error to subscribers for strong consistency
+          if (
+            err.message &&
+            err.message.includes('Strong consistency not yet implemented')
+          ) {
+            this.error(err);
+          }
+          // Other errors are already handled in persist method
         },
       });
   }
