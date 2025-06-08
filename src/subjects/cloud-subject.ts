@@ -118,7 +118,7 @@ export class CloudSubject<T> extends Subject<T> {
       .pipe(
         switchMap((ready) => {
           if (ready) {
-            return from(this.provider.retrieve<T>(this.streamName));
+            return from(this.provider.all<T>(this.streamName));
           } else {
             throw new Error('Provider is not ready');
           }

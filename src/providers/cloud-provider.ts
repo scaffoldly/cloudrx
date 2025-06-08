@@ -27,7 +27,7 @@ export abstract class CloudProvider implements TimestampProvider {
   /**
    * Retrieve all values for a given stream name
    */
-  abstract retrieve<T>(streamName: string): Promise<T[]>;
+  abstract all<T>(streamName: string): Promise<T[]>;
 
   /**
    * Observable that emits true when the provider is ready, completes immediately after
@@ -126,7 +126,7 @@ export abstract class CloudProvider implements TimestampProvider {
       switchMap(() => of(null).pipe(delay(100))),
       // Step 3: Retrieve to verify storage with timeout
       switchMap(() =>
-        from(this.retrieve<T>(streamName)).pipe(
+        from(this.all<T>(streamName)).pipe(
           timeout(5000) // 5 second timeout for retrieve operation
         )
       ),
@@ -144,7 +144,7 @@ export abstract class CloudProvider implements TimestampProvider {
           // If not found, wait a bit longer and try retrieve again (eventual consistency)
           return of(null).pipe(
             delay(500),
-            switchMap(() => from(this.retrieve<T>(streamName))),
+            switchMap(() => from(this.all<T>(streamName))),
             switchMap((secondRetrieve) => {
               const secondCheck = this.verifyValueInRetrievedData(
                 value,

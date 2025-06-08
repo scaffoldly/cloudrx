@@ -37,7 +37,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
   beforeEach(() => {
     // Get current test name to use as stream name
     currentTestName = expect.getState().currentTestName || 'unknown-test';
-    
+
     // Use error-level logger for integration tests - only show actual errors
     // Store-then-verify timing issues will be at debug level (not shown)
     mockLogger = createLogger('test-logger', 'error');
@@ -90,16 +90,13 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Create a new subject with the same stream name to test replay
-    const replaySubject = new CloudSubject<TestData>(
-      currentTestName,
-      {
-        type: 'aws-dynamodb',
-        tableName: 'integration-test-table',
-        client: dynamoDBContainer.getClient(),
-        replayOnSubscribe: true,
-        logger: mockLogger,
-      }
-    );
+    const replaySubject = new CloudSubject<TestData>(currentTestName, {
+      type: 'aws-dynamodb',
+      tableName: 'integration-test-table',
+      client: dynamoDBContainer.getClient(),
+      replayOnSubscribe: true,
+      logger: mockLogger,
+    });
 
     const replayedValues: TestData[] = [];
 
@@ -213,9 +210,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Verify data was stored by reading directly from provider
-    const retrievedData = await dynamoDBProvider.retrieve(
-      currentTestName
-    );
+    const retrievedData = await dynamoDBProvider.all(currentTestName);
     expect(retrievedData).toContainEqual(persistentData);
   }, 8000);
 
@@ -252,9 +247,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     expect(emissionTimestamp).toBeGreaterThan(emitStartTime);
 
     // Verify data is actually in cloud storage
-    const retrievedData = await dynamoDBProvider.retrieve(
-      currentTestName
-    );
+    const retrievedData = await dynamoDBProvider.all(currentTestName);
     expect(retrievedData).toContainEqual(testData);
 
     // Clean up

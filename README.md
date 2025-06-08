@@ -18,11 +18,11 @@ import { CloudSubject, CloudObservable } from 'cloudrx';
 // Create a subject backed by cloud storage
 const cloudSubject = new CloudSubject('my-stream', {
   provider: 'aws-s3',
-  bucket: 'my-app-state'
+  bucket: 'my-app-state',
 });
 
 // Subscribe to persisted events
-cloudSubject.subscribe(value => {
+cloudSubject.subscribe((value) => {
   console.log('Received:', value);
 });
 

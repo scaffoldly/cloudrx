@@ -5,6 +5,7 @@ This document provides step-by-step instructions for creating a professional Typ
 ## Step 1: Project Initialization
 
 ### Create Directory Structure
+
 ```bash
 mkdir -p <project-name>/src
 mkdir -p <project-name>/tests
@@ -16,7 +17,9 @@ cd <project-name>
 ## Step 2: Core Configuration Files
 
 ### package.json
+
 Create with the following structure:
+
 ```json
 {
   "name": "<project-name>",
@@ -24,11 +27,7 @@ Create with the following structure:
   "description": "<project description>",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist/**/*.js",
-    "dist/**/*.d.ts",
-    "dist/**/*.js.map"
-  ],
+  "files": ["dist/**/*.js", "dist/**/*.d.ts", "dist/**/*.js.map"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -43,10 +42,7 @@ Create with the following structure:
     "test:integration:watch": "jest --config jest.integration.config.js --watch",
     "test:all": "npm run test && npm run test:integration"
   },
-  "keywords": [
-    "typescript",
-    "library"
-  ],
+  "keywords": ["typescript", "library"],
   "author": "",
   "license": "GPL-3.0",
   "devDependencies": {
@@ -67,6 +63,7 @@ Create with the following structure:
 ```
 
 ### tsconfig.json
+
 ```json
 {
   "compilerOptions": {
@@ -91,35 +88,27 @@ Create with the following structure:
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }
 ```
 
 ### jest.config.js (ES Module syntax)
+
 ```javascript
 export default {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.d.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts'],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
 };
 ```
 
 ### jest.integration.config.js
+
 ```javascript
 export default {
   preset: 'ts-jest',
@@ -127,10 +116,7 @@ export default {
   roots: ['<rootDir>/integration-tests'],
   testMatch: ['**/*.integration.test.ts'],
   setupFilesAfterEnv: ['<rootDir>/integration-tests/setup.ts'],
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.d.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts'],
   coverageDirectory: 'coverage-integration',
   coverageReporters: ['text', 'lcov', 'html'],
   testTimeout: 30000,
@@ -139,6 +125,7 @@ export default {
 ```
 
 ### .eslintrc.js
+
 ```javascript
 module.exports = {
   parser: '@typescript-eslint/parser',
@@ -146,12 +133,8 @@ module.exports = {
     ecmaVersion: 2020,
     sourceType: 'module',
   },
-  extends: [
-    '@typescript-eslint/recommended',
-  ],
-  plugins: [
-    '@typescript-eslint',
-  ],
+  extends: ['@typescript-eslint/recommended'],
+  plugins: ['@typescript-eslint'],
   rules: {
     '@typescript-eslint/no-unused-vars': 'error',
     '@typescript-eslint/explicit-function-return-type': 'warn',
@@ -165,6 +148,7 @@ module.exports = {
 ```
 
 ### .prettierrc
+
 ```json
 {
   "semi": true,
@@ -179,12 +163,14 @@ module.exports = {
 ## Step 3: Source Code Structure
 
 ### src/index.ts (Main Export File)
+
 ```typescript
 export * from './[main-class-name]';
 // Add additional exports as needed
 ```
 
 ### src/[main-class-name].ts
+
 ```typescript
 export class [MainClassName] {
   constructor() {
@@ -198,11 +184,13 @@ export class [MainClassName] {
 ```
 
 ### Additional Source Files
+
 Create additional TypeScript files in `src/` as needed for your library's functionality.
 
 ## Step 4: Test Structure
 
 ### tests/[main-class-name].test.ts
+
 ```typescript
 import { [MainClassName] } from '../src/[main-class-name]';
 
@@ -224,6 +212,7 @@ describe('[MainClassName]', () => {
 ```
 
 ### integration-tests/setup.ts
+
 ```typescript
 export const setupIntegrationTests = (): void => {
   jest.setTimeout(30000);
@@ -236,6 +225,7 @@ export const teardownIntegrationTests = (): void => {
 ```
 
 ### integration-tests/[feature].integration.test.ts
+
 ```typescript
 import { [MainClassName] } from '../src/[main-class-name]';
 
@@ -259,6 +249,7 @@ describe('[Feature] Integration Tests', () => {
 ## Step 5: Documentation
 
 ### README.md Template
+
 ```markdown
 # [Library Name]
 
@@ -289,10 +280,12 @@ console.log(instance.hello());
 ## Development
 
 ### Prerequisites
+
 - Node.js >= 16
 - npm or yarn
 
 ### Setup
+
 \`\`\`bash
 git clone <repository-url>
 cd [library-name]
@@ -304,6 +297,7 @@ npm run test:all
 \`\`\`
 
 ### Available Scripts
+
 - \`npm run build\` - Compile TypeScript
 - \`npm run dev\` - Watch mode compilation
 - \`npm run test\` - Run unit tests
@@ -331,15 +325,18 @@ GNU General Public License v3.0
 ```
 
 ### CLAUDE.md Template
+
 ```markdown
 # [Library Name] - Claude Operating Notes
 
 ## Project Overview
+
 [Description of what this library does and its purpose]
 
 ## Development Workflow
 
 ### Build and Test Commands
+
 - \`npm run build\` - Compile TypeScript to JavaScript
 - \`npm run dev\` - Watch mode compilation
 - \`npm run test\` - Run unit tests
@@ -353,29 +350,31 @@ GNU General Public License v3.0
 - \`npm run clean\` - Remove dist directory
 
 ### Project Structure
+
 \`\`\`
 src/
-├── index.ts          # Main export file
-├── [main-class].ts   # Core class
-└── [additional-files].ts  # Additional library functionality
+├── index.ts # Main export file
+├── [main-class].ts # Core class
+└── [additional-files].ts # Additional library functionality
 tests/
-├── [main-class].test.ts   # Unit test files
-integration-tests/    # Integration tests
-├── setup.ts          # Integration test setup/teardown
-└── [feature].integration.test.ts  # Integration test files
-examples/             # Example usage projects (tracked in git)
-├── README.md         # Examples documentation
-├── basic/            # Basic usage example
-│   ├── package.json  # Standalone project with library dependency
-│   └── index.js      # Example usage code
-└── [specific-use-case]/  # Feature-specific examples
-    ├── package.json
-    ├── index.js
-    └── README.md
-dist/                 # Compiled output (gitignored)
+├── [main-class].test.ts # Unit test files
+integration-tests/ # Integration tests
+├── setup.ts # Integration test setup/teardown
+└── [feature].integration.test.ts # Integration test files
+examples/ # Example usage projects (tracked in git)
+├── README.md # Examples documentation
+├── basic/ # Basic usage example
+│ ├── package.json # Standalone project with library dependency
+│ └── index.js # Example usage code
+└── [specific-use-case]/ # Feature-specific examples
+├── package.json
+├── index.js
+└── README.md
+dist/ # Compiled output (gitignored)
 \`\`\`
 
 ### Code Standards
+
 - Strict TypeScript configuration enabled
 - ESLint with TypeScript rules
 - Prettier for code formatting
@@ -383,12 +382,15 @@ dist/                 # Compiled output (gitignored)
 - Export everything through \`src/index.ts\`
 
 ### Before Commits
+
 Always run these commands to ensure code quality:
+
 1. \`npm run lint\` - Check for linting errors
 2. \`npm run build\` - Ensure TypeScript compiles without errors
 3. \`npm run test:all\` - Ensure all tests pass
 
 ### Dependencies
+
 - TypeScript 5.x
 - Jest for testing
 - ESLint + Prettier for code quality
@@ -400,11 +402,13 @@ Always run these commands to ensure code quality:
 Create example projects to demonstrate library usage and test it as a dependency.
 
 ### Create Basic Example
+
 ```bash
 mkdir -p examples/basic
 ```
 
 ### examples/basic/package.json
+
 ```json
 {
   "name": "[library-name]-example-basic",
@@ -424,6 +428,7 @@ mkdir -p examples/basic
 ```
 
 ### examples/basic/index.js
+
 ```javascript
 // Basic [library-name] Example
 const { [MainClassName] } = require('[library-name]');
@@ -437,6 +442,7 @@ console.log('[library-name] basic example completed!');
 ```
 
 ### examples/README.md
+
 ```markdown
 # [Library Name] Examples
 
@@ -445,6 +451,7 @@ This directory contains example projects demonstrating how to use [library-name]
 ## Available Examples
 
 ### Basic Usage
+
 - **Path**: \`basic/\`
 - **Description**: Simple [library-name] usage example
 - **Run**: \`cd basic && npm install && npm start\`
@@ -452,6 +459,7 @@ This directory contains example projects demonstrating how to use [library-name]
 ## How Examples Work
 
 Each example is a standalone Node.js project that:
+
 1. Has its own \`package.json\`
 2. Installs [library-name] as a dependency using \`"[library-name]": "file:../.."\`
 3. Demonstrates specific functionality
@@ -465,6 +473,7 @@ These examples serve as integration tests to ensure [library-name] works correct
 ## Step 7: Git Configuration
 
 Update .gitignore to include:
+
 ```
 # Build output
 dist/

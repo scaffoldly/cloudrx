@@ -5,11 +5,13 @@ This directory contains example projects demonstrating how to use CloudRx as a d
 ## Available Examples
 
 ### Basic Usage
+
 - **Path**: `basic/`
 - **Description**: Simple CloudRx usage example
 - **Run**: `cd basic && npm install && npm start`
 
 ### AWS DynamoDB
+
 - **Path**: `aws/dynamodb/`
 - **Description**: CloudRx with AWS DynamoDB persistence (placeholder)
 - **Run**: `cd aws/dynamodb && npm install && npm start`
@@ -17,6 +19,7 @@ This directory contains example projects demonstrating how to use CloudRx as a d
 ## How Examples Work
 
 Each example is a standalone Node.js project that:
+
 1. Has its own `package.json`
 2. Installs CloudRx as a dependency using `"cloudrx": "file:../../.."`
 3. Demonstrates specific CloudRx functionality

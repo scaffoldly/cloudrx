@@ -53,7 +53,7 @@ export class DynamoDBProvider extends CloudProvider {
     );
   }
 
-  async retrieve<T>(streamName: string): Promise<T[]> {
+  async all<T>(streamName: string): Promise<T[]> {
     const command = new QueryCommand({
       TableName: this.tableName,
       KeyConditionExpression: 'streamName = :streamName',

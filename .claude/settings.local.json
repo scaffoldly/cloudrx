@@ -17,7 +17,8 @@
       "Bash(npx jest:*)",
       "Bash(npm run lint:*)",
       "Bash(npm run format:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }
