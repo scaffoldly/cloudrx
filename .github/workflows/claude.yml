@@ -9,24 +9,6 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-  workflow_dispatch:
-    inputs:
-      trigger_type:
-        description: 'Type of trigger (ci_failure, manual, etc.)'
-        required: true
-        type: string
-      issue_number:
-        description: 'Issue number for CI failures'
-        required: false
-        type: string
-      commit_sha:
-        description: 'Commit SHA for CI failures'
-        required: false
-        type: string
-      failed_jobs:
-        description: 'JSON string of failed jobs info'
-        required: false
-        type: string
 
 permissions: write-all
 
@@ -37,7 +19,6 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
-      (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -50,8 +31,3 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          direct_prompt: ${{
-            github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number &&
-            format('Please investigate issue {0}/{1}/issues/{2}. Look at the issue details, any related code, and provide a PR if possible. If you cannot fix it, please provide a detailed explanation of the issue and why it cannot be resolved as an issue comment, and mention the relevant owners in the .github/CODEOWNERS file.', github.server_url, github.repository, github.event.inputs.issue_number)
-            || '' }}

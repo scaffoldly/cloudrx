@@ -146,27 +146,15 @@ jobs:
               labels: ['bug', 'ci-failure', 'main-branch']
             });
 
-            // Add a comment with investigation details
-            await github.rest.issues.createComment({
+            // Add a comment with investigation details using specific token
+            const { Octokit } = require('@octokit/rest');
+            const octokit = new Octokit({
+              auth: '${{ secrets.COMMENT_BOT_TOKEN }}'
+            });
+
+            await octokit.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue.data.number,
-              body: 'Claude will be automatically notified to investigate this CI failure.'
-            });
-
-            // Trigger claude workflow via workflow_dispatch
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'claude.yml',
-              ref: 'main',
-              inputs: {
-                trigger_type: 'ci_failure',
-                issue_number: issue.data.number.toString(),
-                commit_sha: context.sha,
-                failed_jobs: JSON.stringify({
-                  unit_tests: unitTestsFailed,
-                  integration_tests: integrationTestsFailed
-                })
-              }
+              body: '@claude Please investigate this CI failure.'
             });
