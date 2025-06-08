@@ -1,9 +1,11 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { Observable, of, from, defer, throwError } from 'rxjs';
+import { switchMap, retry, catchError, tap } from 'rxjs/operators';
 import { CloudProvider, CloudProviderOptions } from '../../cloud-provider';
 import { createLogger } from '../../../utils/logger';
 
@@ -18,6 +20,7 @@ export class DynamoDBProvider<
   Key extends string = string,
 > extends CloudProvider<T, Key> {
   private docClient: DynamoDBDocumentClient;
+  private client: DynamoDBClient;
   private tableName: string;
 
   constructor(config: DynamoDBProviderConfig) {
@@ -27,13 +30,13 @@ export class DynamoDBProvider<
     });
     this.tableName = config.tableName;
 
-    const client =
+    this.client =
       config.client ||
       new DynamoDBClient({
         region: config.region || 'us-east-1',
       });
 
-    this.docClient = DynamoDBDocumentClient.from(client);
+    this.docClient = DynamoDBDocumentClient.from(this.client);
   }
 
   async store(streamName: string, key: Key, value: T): Promise<Key> {
@@ -95,54 +98,41 @@ export class DynamoDBProvider<
     return undefined;
   }
 
-  protected async init(): Promise<boolean> {
+  protected init(): Observable<boolean> {
     // In test environment, handle differently based on client setup
     if (process.env.NODE_ENV === 'test') {
       // If no custom client provided, assume we're using mocks (unit tests)
       const clientConfig = (
-        this.docClient as unknown as { config?: { endpoint?: string } }
+        this.client as unknown as { config?: { endpoint?: string } }
       ).config;
       if (!clientConfig?.endpoint) {
         this.logger.info(
           'DynamoDB provider is ready (test environment with mocks)'
         );
-        return true;
+        return of(true);
       }
     }
 
-    // Try readiness check with retries (for real environments and integration tests)
+    // For real environments and integration tests, check table status
     const maxAttempts = process.env.NODE_ENV === 'test' ? 5 : 10;
     const delayMs = process.env.NODE_ENV === 'test' ? 200 : 1000;
-    let lastError: Error | undefined;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const ready = await this.checkReadiness();
+    return defer(() => this.checkTableStatus()).pipe(
+      retry({ count: maxAttempts - 1, delay: delayMs }),
+      tap((ready) => {
         if (ready) {
-          this.logger.info('DynamoDB provider is ready');
-          return true;
+          this.logger.info('DynamoDB provider is ready - table is ACTIVE');
+        } else {
+          this.logger.debug('DynamoDB table is not ready yet');
         }
-        this.logger.debug(
-          `DynamoDB provider not ready yet, attempt ${attempt}/${maxAttempts}`
-        );
-        // Wait before next attempt
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        this.logger.debug(
+      }),
+      catchError((error) => {
+        this.logger.error(
           { error },
-          `DynamoDB readiness check failed, attempt ${attempt}/${maxAttempts}`
+          'DynamoDB provider failed to become ready after retries'
         );
-        // Wait before next attempt
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-
-    this.logger.error('DynamoDB provider failed to become ready after retries');
-    // Always throw an error if we can't become ready
-    throw (
-      lastError ||
-      new Error('DynamoDB provider failed to become ready after retries')
+        return throwError(() => error);
+      })
     );
   }
 
@@ -153,26 +143,38 @@ export class DynamoDBProvider<
     super.dispose();
   }
 
-  private async checkReadiness(): Promise<boolean> {
-    try {
-      // Simple health check - try to query the table
-      await this.docClient.send(
-        new QueryCommand({
+  private checkTableStatus(): Observable<boolean> {
+    return from(
+      this.client.send(
+        new DescribeTableCommand({
           TableName: this.tableName,
-          KeyConditionExpression: 'streamName = :test',
-          ExpressionAttributeValues: {
-            ':test': '__health_check__',
-          },
-          Limit: 1,
         })
-      );
-      return true;
-    } catch (error) {
-      this.logger.debug(
-        { error },
-        'DynamoDB provider health check failed, retrying...'
-      );
-      return false;
-    }
+      )
+    ).pipe(
+      switchMap((response) => {
+        const tableStatus = response.Table?.TableStatus;
+        this.logger.debug(
+          { tableStatus },
+          `DynamoDB table status: ${tableStatus}`
+        );
+
+        if (tableStatus === 'ACTIVE') {
+          return of(true);
+        } else {
+          // Table exists but not active yet (CREATING, UPDATING, etc.)
+          return throwError(
+            () =>
+              new Error(`Table status is ${tableStatus}, waiting for ACTIVE`)
+          );
+        }
+      }),
+      catchError((error) => {
+        this.logger.debug(
+          { error },
+          'DynamoDB table status check failed, retrying...'
+        );
+        return throwError(() => error);
+      })
+    );
   }
 }

@@ -73,8 +73,8 @@ export abstract class CloudProvider<T, Key extends string>
     // If not already initialized, start initialization
     if (!this.readySubject) {
       this.readySubject = new AsyncSubject<boolean>();
-      this.init()
-        .then((ready) => {
+      this.init().subscribe({
+        next: (ready) => {
           if (this.readySubject) {
             this.readySubject.next(ready);
             this.readySubject.complete();
@@ -84,8 +84,8 @@ export abstract class CloudProvider<T, Key extends string>
               this.logger.warn('CloudProvider initialization returned false');
             }
           }
-        })
-        .catch((error) => {
+        },
+        error: (error) => {
           this.logger.error({ error }, 'CloudProvider initialization failed');
           this.lastInitError = error;
           if (this.readySubject) {
@@ -94,7 +94,8 @@ export abstract class CloudProvider<T, Key extends string>
             // Unset readySubject so future calls to isReady() can retry
             this.readySubject = undefined;
           }
-        });
+        },
+      });
     }
 
     return this.readySubject.asObservable();
@@ -102,9 +103,9 @@ export abstract class CloudProvider<T, Key extends string>
 
   /**
    * Abstract method for initializing provider-specific readiness logic
-   * Returns Promise<boolean> indicating if provider is ready
+   * Returns Observable<boolean> indicating if provider is ready
    */
-  protected abstract init(): Promise<boolean>;
+  protected abstract init(): Observable<boolean>;
 
   /**
    * Clean up any ongoing subscriptions (useful for testing)
