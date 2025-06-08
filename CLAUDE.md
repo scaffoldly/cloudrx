@@ -147,7 +147,7 @@ Always run these commands to ensure code quality:
 - TypeScript 5.x
 - Jest for testing
 - ESLint + Prettier for code quality
-- Node.js >= 16 required
+- Node.js >= 20 required
 
 ### Memory Tracking
 
