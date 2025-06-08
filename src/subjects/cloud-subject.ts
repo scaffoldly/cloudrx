@@ -124,56 +124,16 @@ export class CloudSubject<T> extends Subject<T> {
           }
         }),
         catchError((error) => {
-          // Check if this is an expected test scenario
-          const isTestErrorScenario =
-            this.streamName.includes('error-test') ||
-            this.streamName.includes('non-existent');
-
-          if (isTestErrorScenario) {
-            this.logger.debug(
-              { err: error.message, streamName: this.streamName },
-              'Test scenario: Replay failed as expected for error handling test'
-            );
-          } else {
-            this.logger.warn(
-              { err: error.message, streamName: this.streamName },
-              'Failed to replay events from cloud provider'
-            );
-          }
+          this.logger.warn(
+            { err: error.message, streamName: this.streamName },
+            'Failed to replay events from cloud provider'
+          );
           return of([]); // Continue operation - subscriber will still get new events
         })
       )
       .subscribe((events) => {
         events.forEach((event: T) => super.next(event));
       });
-  }
-
-  public async clearPersistedData(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.provider
-        .isReady()
-        .pipe(
-          switchMap((ready) => {
-            if (ready) {
-              return from(this.provider.clear(this.streamName));
-            } else {
-              throw new Error('Provider is not ready');
-            }
-          }),
-          catchError((error) => {
-            this.logger.error(
-              { err: error, streamName: this.streamName },
-              'Failed to clear persisted data from cloud provider'
-            );
-            reject(error);
-            return of(undefined);
-          })
-        )
-        .subscribe({
-          next: () => resolve(),
-          error: (error) => reject(error),
-        });
-    });
   }
 
   /**

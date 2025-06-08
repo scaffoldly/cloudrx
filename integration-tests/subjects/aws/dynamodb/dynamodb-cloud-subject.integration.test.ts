@@ -19,6 +19,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
   let dynamoDBProvider: DynamoDBProvider;
   let dynamoDBContainer: DynamoDBLocalContainer;
   let mockLogger: pino.Logger;
+  let currentTestName: string;
 
   beforeAll(async () => {
     // Start DynamoDB Local container
@@ -34,6 +35,9 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
   });
 
   beforeEach(() => {
+    // Get current test name to use as stream name
+    currentTestName = expect.getState().currentTestName || 'unknown-test';
+    
     // Use error-level logger for integration tests - only show actual errors
     // Store-then-verify timing issues will be at debug level (not shown)
     mockLogger = createLogger('test-logger', 'error');
@@ -44,8 +48,8 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
       client: dynamoDBContainer.getClient(),
     });
 
-    // Create CloudSubject with local client and mock logger
-    cloudSubject = new CloudSubject<TestData>('integration-test-stream', {
+    // Create CloudSubject with test name as stream name
+    cloudSubject = new CloudSubject<TestData>(currentTestName, {
       type: 'aws-dynamodb',
       tableName: 'integration-test-table',
       client: dynamoDBContainer.getClient(),
@@ -57,13 +61,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
   afterEach(async () => {
     // Clear test data after each test
     if (cloudSubject) {
-      try {
-        await cloudSubject.clearPersistedData();
-        // Use new dispose method that handles logger cleanup
-        cloudSubject.dispose();
-      } catch (error) {
-        logger.warn({ err: error }, 'Failed to clear test data');
-      }
+      cloudSubject.dispose();
     }
 
     // Clean up provider subscriptions
@@ -93,7 +91,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
     // Create a new subject with the same stream name to test replay
     const replaySubject = new CloudSubject<TestData>(
-      'integration-test-stream',
+      currentTestName,
       {
         type: 'aws-dynamodb',
         tableName: 'integration-test-table',
@@ -169,7 +167,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
     const silentLogger = pino({ level: 'silent' });
 
     // Test with an invalid table name to trigger errors
-    const badSubject = new CloudSubject<TestData>('error-test-stream', {
+    const badSubject = new CloudSubject<TestData>(currentTestName, {
       type: 'aws-dynamodb',
       tableName: 'non-existent-table',
       client: dynamoDBContainer.getClient(),
@@ -216,7 +214,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
     // Verify data was stored by reading directly from provider
     const retrievedData = await dynamoDBProvider.retrieve(
-      'integration-test-stream'
+      currentTestName
     );
     expect(retrievedData).toContainEqual(persistentData);
   }, 8000);
@@ -255,7 +253,7 @@ describe('DynamoDB CloudSubject Integration Tests', () => {
 
     // Verify data is actually in cloud storage
     const retrievedData = await dynamoDBProvider.retrieve(
-      'integration-test-stream'
+      currentTestName
     );
     expect(retrievedData).toContainEqual(testData);
 

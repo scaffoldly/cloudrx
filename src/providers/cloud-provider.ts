@@ -30,11 +30,6 @@ export abstract class CloudProvider implements TimestampProvider {
   abstract retrieve<T>(streamName: string): Promise<T[]>;
 
   /**
-   * Clear all data for a given stream name
-   */
-  abstract clear(streamName: string): Promise<void>;
-
-  /**
    * Observable that emits true when the provider is ready, completes immediately after
    * Uses AsyncSubject pattern - emits the last value and completes
    */
