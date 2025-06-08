@@ -96,13 +96,12 @@ export class DynamoDBProvider<
   }
 
   protected async init(): Promise<boolean> {
-    // For DynamoDB Local in tests, assume it's ready immediately
-    if (process.env.NODE_ENV === 'test') {
-      return true;
-    }
+    // Try readiness check with retries (even in test env to ensure table exists)
+    const maxAttempts = process.env.NODE_ENV === 'test' ? 5 : 10;
+    const delayMs = process.env.NODE_ENV === 'test' ? 200 : 1000;
+    let lastError: Error | undefined;
 
-    // Try readiness check with retries
-    for (let attempt = 1; attempt <= 10; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const ready = await this.checkReadiness();
         if (ready) {
@@ -110,21 +109,27 @@ export class DynamoDBProvider<
           return true;
         }
         this.logger.debug(
-          `DynamoDB provider not ready yet, attempt ${attempt}/10`
+          `DynamoDB provider not ready yet, attempt ${attempt}/${maxAttempts}`
         );
-        // Wait 1 second before next attempt
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch {
+        // Wait before next attempt
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
         this.logger.debug(
-          `DynamoDB readiness check failed, attempt ${attempt}/10`
+          { error },
+          `DynamoDB readiness check failed, attempt ${attempt}/${maxAttempts}`
         );
-        // Wait 1 second before next attempt
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Wait before next attempt
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
 
     this.logger.error('DynamoDB provider failed to become ready after retries');
-    return false;
+    // Always throw an error if we can't become ready
+    throw (
+      lastError ||
+      new Error('DynamoDB provider failed to become ready after retries')
+    );
   }
 
   /**

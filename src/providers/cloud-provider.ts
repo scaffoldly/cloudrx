@@ -35,6 +35,7 @@ export abstract class CloudProvider<T, Key extends string>
   protected readySubject?: AsyncSubject<boolean> | undefined;
   protected consistency: ConsistencyLevel;
   protected logger: pino.Logger;
+  private lastInitError?: Error;
 
   constructor(options?: CloudProviderOptions) {
     this.timestampProvider = options?.timestampProvider || {
@@ -86,6 +87,7 @@ export abstract class CloudProvider<T, Key extends string>
         })
         .catch((error) => {
           this.logger.error({ error }, 'CloudProvider initialization failed');
+          this.lastInitError = error;
           if (this.readySubject) {
             this.readySubject.next(false);
             this.readySubject.complete();
@@ -166,7 +168,7 @@ export abstract class CloudProvider<T, Key extends string>
               })
             );
           } else {
-            throw new Error('Provider is not ready');
+            throw this.lastInitError || new Error('Provider is not ready');
           }
         }),
         catchError((error) => {
@@ -185,7 +187,7 @@ export abstract class CloudProvider<T, Key extends string>
         if (ready) {
           return this.attemptStoreAndVerify(streamName, key, value);
         } else {
-          throw new Error('Provider is not ready');
+          throw this.lastInitError || new Error('Provider is not ready');
         }
       }),
       // Retry once on failure with short delay
