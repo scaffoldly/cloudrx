@@ -51,3 +51,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          direct_prompt: ${{
+            github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number &&
+            'Please investigate issue ' + github.server_url + '/' + github.repository + '/issues/' + github.event.inputs.issue_number + '. Look at the issue details, any related code, and provide a PR if possible. If you cannot fix it, please provide a detailed explanation of the issue and why it cannot be resolved as an issue comment, and mention the relevant owners in the .github/CODEOWNERS file.'
+            || '' }}
