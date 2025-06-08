@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git:*)",
       "Bash(mkdir:*)",
       "Bash(npm install)",
       "Bash(npm test)",
@@ -20,7 +21,26 @@
       "Bash(npx prettier:*)",
       "Bash(ls:*)",
       "Bash(rg:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(cp:*)",
+      "Bash(chmod:*)",
+      "Bash(touch:*)",
+      "Bash(pwd)",
+      "Bash(whoami)",
+      "Bash(date)",
+      "Bash(ps:*)",
+      "Bash(kill:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
     ],
     "deny": []
   }
