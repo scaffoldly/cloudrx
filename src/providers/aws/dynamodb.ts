@@ -20,6 +20,7 @@ import {
   Observable,
   of,
   ReplaySubject,
+  scan,
   Subject,
   switchMap,
   takeUntil,
@@ -30,7 +31,10 @@ import {
 import {
   _Record,
   DynamoDBStreamsClient,
+  DescribeStreamCommand,
   GetRecordsCommand,
+  GetShardIteratorCommand,
+  Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 
 export type DynamoDBProviderOptions = {
@@ -113,16 +117,50 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
     const shardIterator = new Subject<string>();
 
-    // TODO: Write a shard poller that
-    // - Describes the stream
-    // - Gets all shards
-    // - Only emits newly discovered shards
-    // - For each newly discovered shard
-    //   - Gets the shard iterator
-    //   - Emits the shard iterator to the shardIterator subject
+    const shards = timer(0, 5000)
+      .pipe(
+        takeUntil(fromEvent(signal, 'abort')),
+        switchMap(() =>
+          this.streamClient
+            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
+              abortSignal: signal,
+            })
+            .then((response) => response.StreamDescription?.Shards || [])
+        ),
+        scan(
+          (acc, currentShards) => {
+            const newShards = currentShards.filter(
+              (shard) =>
+                !acc.previousShards.some(
+                  (prev) => prev.ShardId === shard.ShardId
+                )
+            );
+            return { previousShards: currentShards, newShards };
+          },
+          { previousShards: [] as Shard[], newShards: [] as Shard[] }
+        ),
+        switchMap(({ newShards }) => newShards),
+        switchMap((shard) =>
+          this.streamClient
+            .send(
+              new GetShardIteratorCommand({
+                StreamArn: this.streamArn,
+                ShardId: shard.ShardId,
+                ShardIteratorType:
+                  since === 'latest' ? 'LATEST' : 'TRIM_HORIZON',
+              }),
+              { abortSignal: signal }
+            )
+            .then((response) => response.ShardIterator!)
+        ),
+        tap((iterator) => shardIterator.next(iterator))
+      )
+      .subscribe();
 
     return shardIterator.pipe(
-      takeUntil(fromEvent(signal, 'abort')),
+      takeUntil(
+        fromEvent(signal, 'abort').pipe(tap(() => shards.unsubscribe()))
+      ),
       concatMap((position) =>
         this.streamClient
           .send(new GetRecordsCommand({ ShardIterator: position }), {
