@@ -109,3 +109,4 @@ npm run build             # Build for production
 
 ## Development Principles
 - don't arbitrarily add delays, investigate the race conditions
+- prefer early return pattern for conditionals (if condition, return) rather than large if-else blocks

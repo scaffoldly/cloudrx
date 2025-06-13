@@ -56,7 +56,7 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
-  private shardObservable?: Observable<Shard[]>;
+  private shardObservable?: Observable<Shard>;
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -113,52 +113,52 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   // Get or create a shared shard observable
-  private getSharedShardObservable(signal: AbortSignal): Observable<Shard[]> {
-    // Initialize the shared observable if it doesn't exist
-    if (!this.shardObservable) {
-      this.logger.debug(
-        `[${this.id}] Creating shared shard observable for stream: ${this.streamArn}`
-      );
-
-      // Create the shared observable
-      this.shardObservable = timer(0, this.shardPollingInterval).pipe(
-        takeUntil(fromEvent(signal, 'abort')),
-        switchMap(() => {
-          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
-          return this.streamClient
-            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-              abortSignal: signal,
-            })
-            .then((response) => {
-              this.logger.debug(
-                `[${this.id}] Stream description successful, shards:`,
-                response.StreamDescription?.Shards?.length || 0
-              );
-              return response.StreamDescription?.Shards || [];
-            })
-            .catch((error) => {
-              this.logger.error(
-                `[${this.id}] Failed to describe stream:`,
-                error
-              );
-              return []; // Return empty array on error to keep polling
-            });
-        }),
-        scan((previousShards, currentShards) => {
-          // Only emit shards we haven't seen before
-          return currentShards.filter(
-            (shard) =>
-              !previousShards.some((prev) => prev.ShardId === shard.ShardId)
-          );
-        }, [] as Shard[]),
-        // Only emit when there are new shards
-        filter((newShards) => newShards.length > 0),
-        // Share the observable with all subscribers
-        shareReplay(1)
-      );
+  private getSharedShardObservable(signal: AbortSignal): Observable<Shard> {
+    // Return existing observable if it exists
+    if (this.shardObservable) {
+      return this.shardObservable;
     }
 
-    // The observable must exist at this point
+    this.logger.debug(
+      `[${this.id}] Creating shared shard observable for stream: ${this.streamArn}`
+    );
+
+    // Create the shared observable
+    this.shardObservable = timer(0, this.shardPollingInterval).pipe(
+      takeUntil(fromEvent(signal, 'abort')),
+      switchMap(() => {
+        this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+        return this.streamClient
+          .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
+            abortSignal: signal,
+          })
+          .then((response) => {
+            this.logger.debug(
+              `[${this.id}] Stream description successful, shards:`,
+              response.StreamDescription?.Shards?.length || 0
+            );
+            return response.StreamDescription?.Shards || [];
+          })
+          .catch((error) => {
+            this.logger.error(`[${this.id}] Failed to describe stream:`, error);
+            return []; // Return empty array on error to keep polling
+          });
+      }),
+      scan((previousShards, currentShards) => {
+        // Only emit shards we haven't seen before
+        return currentShards.filter(
+          (shard) =>
+            !previousShards.some((prev) => prev.ShardId === shard.ShardId)
+        );
+      }, [] as Shard[]),
+      // Only emit when there are new shards
+      filter((newShards) => newShards.length > 0),
+      // Flatten the array to emit individual shards
+      switchMap((shards) => from(shards)),
+      // Share the observable with all subscribers
+      shareReplay(1)
+    );
+
     return this.shardObservable;
   }
 
@@ -185,8 +185,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     const shardSubscription = this.getSharedShardObservable(signal)
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
-        // Process new shards
-        switchMap((newShards) => from(newShards)),
+        // Process each shard
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
