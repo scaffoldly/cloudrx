@@ -43,7 +43,6 @@ import {
   GetShardIteratorCommand,
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
-import { Logger } from '../..';
 
 export type DynamoDBProviderOptions = CloudProviderOptions & {
   client: DynamoDBClient;
@@ -58,13 +57,13 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
-  private opts: DynamoDBProviderOptions;
+  protected opts: DynamoDBProviderOptions;
 
   private _tableArn?: string;
   private _streamArn?: string;
 
   protected constructor(id: string, options: DynamoDBProviderOptions) {
-    super(id);
+    super(id, options);
     this.client = DynamoDBDocumentClient.from(options.client);
     this.opts = options;
   }
@@ -94,10 +93,6 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this._streamClient;
   }
 
-  get signal(): AbortSignal {
-    return this.opts.signal;
-  }
-
   get hashKey(): string {
     return this.opts.hashKey;
   }
@@ -112,10 +107,6 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
   get shardPollingInterval(): number {
     return this.opts.shardPollingInterval || 5000;
-  }
-
-  get log(): Logger {
-    return this.opts.logger || console;
   }
 
   static from(
@@ -144,7 +135,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             })
             .then((response) => response.StreamDescription?.Shards || [])
             .catch((error) => {
-              this.log.error('Failed to describe stream:', error);
+              this.logger.error('Failed to describe stream:', error);
               return []; // Return empty array on error to keep polling
             })
         ),
@@ -174,7 +165,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             )
             .then((response) => {
               if (!response.ShardIterator) {
-                this.log.error(
+                this.logger.error(
                   'No ShardIterator returned for shard:',
                   shard.ShardId
                 );
@@ -183,7 +174,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               return response.ShardIterator;
             })
             .catch((error) => {
-              this.log.error('Failed to get shard iterator:', error);
+              this.logger.error('Failed to get shard iterator:', error);
               return null;
             })
         ),
@@ -282,12 +273,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           }
         ),
       ]).pipe(
-        map(([table]) => ({
+        map(([table, ttl]) => ({
           table: table.TableDescription,
-          ttl: {
-            TimeToLiveStatus: 'ENABLING' as const,
-            AttributeName: this.ttlAttribute,
-          } as TimeToLiveDescription,
+          ttl: ttl.TimeToLiveSpecification,
         }))
       )
     );
@@ -339,7 +327,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         ttl.TimeToLiveStatus !== 'ENABLED' &&
         ttl.TimeToLiveStatus !== 'ENABLING'
       ) {
-        throw new RetryError('TTL is not yet enabled');
+        throw new RetryError(
+          `TTL is not yet enabled, current status: ${ttl.TimeToLiveStatus}`
+        );
       }
 
       if (
@@ -525,7 +515,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         };
       }),
       catchError((error) => {
-        this.log.error('Failed to store item:', error);
+        this.logger.error('Failed to store item:', error);
         return throwError(
           () => new FatalError(`Failed to store item: ${error.message}`)
         );

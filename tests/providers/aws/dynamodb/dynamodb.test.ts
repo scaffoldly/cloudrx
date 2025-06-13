@@ -3,68 +3,104 @@ import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
 import { DynamoDBLocalContainer } from './local';
 
-describe('AWS DynamoDB Provider Tests', () => {
+function testId(): string {
+  return expect
+    .getState()
+    .currentTestName!.replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/--+/g, '-');
+}
+
+describe('aws-dynamodb', () => {
   let container: DynamoDBLocalContainer;
-  let abort = new AbortController();
+  let abort: AbortController;
 
   beforeAll(async () => {
     container = new DynamoDBLocalContainer();
     await container.start();
-  }); // Using global timeout from package.json
+  });
+
+  beforeEach(() => {
+    abort = new AbortController();
+  });
+
+  afterEach(() => {
+    abort.abort();
+  });
 
   afterAll(async () => {
-    abort.abort();
     if (container) {
       await container.stop();
     }
-  }); // Using global timeout from package.json
+  });
 
-  test('is a singleton', async () => {
-    const id = 'is-a-singleton';
+  test('is-a-singleton', async () => {
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
+      logger: console,
     };
 
-    const instance1$ = DynamoDBProvider.from(id, options);
-    const instance2$ = DynamoDBProvider.from(id, options);
+    const instance1$ = DynamoDBProvider.from(testId(), options);
+    const instance2$ = DynamoDBProvider.from(testId(), options);
 
     const instance1 = await firstValueFrom(instance1$);
     const instance2 = await firstValueFrom(instance2$);
 
     expect(instance1).toBe(instance2);
+    expect(instance1.tableName).toBe(`cloudrx-${testId()}`);
+    expect(instance2.tableName).toBe(`cloudrx-${testId()}`);
+  });
 
-    expect(instance1.tableName).toBe(`cloudrx-${id}`);
-    expect(instance2.tableName).toBe(`cloudrx-${id}`);
-  }); // Using global timeout from package.json
-
-  test('Sets Table ARN', async () => {
-    const id = 'sets-table-arn';
+  test('sets-table-arn', async () => {
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
+      logger: console,
     };
 
-    const instance = await firstValueFrom(DynamoDBProvider.from(id, options));
+    const instance = await firstValueFrom(
+      DynamoDBProvider.from(testId(), options)
+    );
 
     expect(instance.tableArn).toBeDefined();
-  }); // Using global timeout from package.json
+  });
 
-  test('Sets Stream ARN', async () => {
-    const id = 'sets-stream-arn';
+  test('sets-stream-arn', async () => {
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
+      logger: console,
     };
 
-    const instance = await firstValueFrom(DynamoDBProvider.from(id, options));
+    const instance = await firstValueFrom(
+      DynamoDBProvider.from(testId(), options)
+    );
 
     expect(instance.streamArn).toBeDefined();
-  }); // Using global timeout from package.json
+  });
+
+  //   test('stores-a-single-item', async () => {
+  //     const testName = expect.getState().currentTestName!;
+  //     const options: DynamoDBProviderOptions = {
+  //       client: container.getClient(),
+  //       hashKey: 'hashKey',
+  //       rangeKey: 'rangeKey',
+  //       signal: abort.signal,
+  //     };
+
+  //     const instance = await firstValueFrom(
+  //       DynamoDBProvider.from(testName, options)
+  //     );
+
+  //     const testData = { message: 'test', timestamp: Date.now() };
+  //     const storedData = await lastValueFrom(instance.store(testData));
+
+  //     expect(storedData).toEqual(testData);
+  //   });
 });

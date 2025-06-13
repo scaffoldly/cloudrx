@@ -37,11 +37,22 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
   error: [Error];
   complete: [];
 }> {
-  protected constructor(protected readonly id: string) {
+  protected constructor(
+    protected readonly id: string,
+    protected readonly opts: CloudProviderOptions
+  ) {
     super({ captureRejections: true });
     if (!id || typeof id !== 'string') {
       throw new Error('CloudProvider id must be a non-empty string');
     }
+  }
+
+  protected get logger(): Logger {
+    return this.opts.logger || console;
+  }
+
+  protected get signal(): AbortSignal {
+    return this.opts.signal;
   }
 
   /**

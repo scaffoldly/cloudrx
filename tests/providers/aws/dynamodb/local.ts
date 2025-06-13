@@ -3,16 +3,7 @@ import {
   StartedTestContainer,
   TestContainer,
 } from 'testcontainers';
-import {
-  DynamoDBClient,
-  CreateTableCommand,
-  StreamViewType,
-} from '@aws-sdk/client-dynamodb';
-import pino from 'pino';
-
-const logger = pino({
-  name: 'cloudrx-dynamodb-container',
-});
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 
 export class DynamoDBLocalContainer {
   private container: TestContainer;
@@ -27,13 +18,13 @@ export class DynamoDBLocalContainer {
 
   async start(): Promise<void> {
     try {
-      logger.info('Starting DynamoDB Local container...');
+      console.info('Starting DynamoDB Local container...');
       this.startedContainer = await this.container.start();
 
       const port = this.startedContainer.getMappedPort(8000);
       const endpoint = `http://localhost:${port}`;
 
-      logger.info(`DynamoDB Local started at ${endpoint}`);
+      console.info(`DynamoDB Local started at ${endpoint}`);
 
       // Create DynamoDB client pointing to local instance
       this.client = new DynamoDBClient({
@@ -44,9 +35,6 @@ export class DynamoDBLocalContainer {
           secretAccessKey: 'fake',
         },
       });
-
-      // Create test table
-      await this.createTestTable();
     } catch (error) {
       if (error instanceof Error) {
         if (error.message.includes('Cannot connect to the Docker daemon')) {
@@ -72,7 +60,7 @@ export class DynamoDBLocalContainer {
 
   async stop(): Promise<void> {
     if (this.startedContainer) {
-      logger.info('Stopping DynamoDB Local container...');
+      console.info('Stopping DynamoDB Local container...');
       await this.startedContainer.stop();
       this.startedContainer = null;
     }
@@ -95,39 +83,5 @@ export class DynamoDBLocalContainer {
     }
     const port = this.startedContainer.getMappedPort(8000);
     return `http://localhost:${port}`;
-  }
-
-  private async createTestTable(): Promise<void> {
-    if (!this.client) {
-      throw new Error('DynamoDB client not available');
-    }
-
-    const tableName = 'integration-test-table';
-
-    try {
-      await this.client.send(
-        new CreateTableCommand({
-          TableName: tableName,
-          KeySchema: [
-            { AttributeName: 'streamName', KeyType: 'HASH' },
-            { AttributeName: 'key', KeyType: 'RANGE' },
-          ],
-          AttributeDefinitions: [
-            { AttributeName: 'streamName', AttributeType: 'S' },
-            { AttributeName: 'key', AttributeType: 'S' },
-          ],
-          BillingMode: 'PAY_PER_REQUEST',
-          StreamSpecification: {
-            StreamEnabled: true,
-            StreamViewType: StreamViewType.NEW_AND_OLD_IMAGES,
-          },
-        })
-      );
-
-      logger.info(`Created table: ${tableName}`);
-    } catch (error) {
-      logger.error({ err: error, tableName }, 'Failed to create test table');
-      throw error;
-    }
   }
 }
