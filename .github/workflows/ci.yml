@@ -99,9 +99,6 @@ jobs:
             if (unitTestsFailed) {
               issueBody += `- ❌ Unit Tests\n`;
             }
-            if (integrationTestsFailed) {
-              issueBody += `- ❌ Integration Tests\n`;
-            }
 
             issueBody += `\n### Next Steps:\n`;
             issueBody += `1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
