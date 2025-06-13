@@ -102,5 +102,5 @@ describe('aws-dynamodb', () => {
     const storedData = await lastValueFrom(instance.store(testData));
 
     expect(storedData).toEqual(testData);
-  }, 10000);
+  });
 });

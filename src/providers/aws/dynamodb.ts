@@ -220,16 +220,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             const nextShardIterator = response.NextShardIterator;
             const records = response.Records || [];
 
-            this.logger.debug(
-              `[${this.id}] Got ${records.length} records from stream`
-            );
-
             if (nextShardIterator) {
               setTimeout(
                 () => {
-                  this.logger.debug(
-                    `[${this.id}] Continuing with next iterator`
-                  );
                   shardIterator.next(nextShardIterator);
                 },
                 !records.length ? 100 : 0
