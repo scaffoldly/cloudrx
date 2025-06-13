@@ -55,10 +55,8 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
-  // Map to store shared shard observables by streamArn
-  private shardObservables: {
-    [key: string]: Observable<Shard[]>;
-  } = {};
+  // Observable for tracking shards
+  private shardObservable?: Observable<Shard[]>;
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -114,19 +112,16 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.shardPollingInterval || 5000;
   }
 
-  // Get or create a shared shard observable for the given stream ARN
+  // Get or create a shared shard observable
   private getSharedShardObservable(signal: AbortSignal): Observable<Shard[]> {
-    // Initialize the shared observable if it doesn't exist for this stream ARN
-    if (!this.shardObservables[this.streamArn]) {
+    // Initialize the shared observable if it doesn't exist
+    if (!this.shardObservable) {
       this.logger.debug(
         `[${this.id}] Creating shared shard observable for stream: ${this.streamArn}`
       );
 
-      // Create the shared observable for this stream ARN
-      this.shardObservables[this.streamArn] = timer(
-        0,
-        this.shardPollingInterval
-      ).pipe(
+      // Create the shared observable
+      this.shardObservable = timer(0, this.shardPollingInterval).pipe(
         takeUntil(fromEvent(signal, 'abort')),
         switchMap(() => {
           this.logger.debug(`[${this.id}] Attempting to describe stream...`);
@@ -164,7 +159,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     }
 
     // The observable must exist at this point
-    return this.shardObservables[this.streamArn]!;
+    return this.shardObservable;
   }
 
   static from(
