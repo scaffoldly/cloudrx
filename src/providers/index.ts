@@ -1,12 +1,17 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
+  combineLatest,
   concatAll,
   delayWhen,
   filter,
+  first,
   fromEvent,
+  map,
   Observable,
   of,
+  switchMap,
   takeUntil,
+  tap,
   timer,
 } from 'rxjs';
 import { EventEmitter } from 'events';
@@ -35,7 +40,8 @@ export interface StreamController {
 export abstract class CloudProvider<TEvent> extends EventEmitter<{
   event: [TEvent];
   error: [Error];
-  complete: [];
+  started: [];
+  stopped: [];
 }> {
   protected constructor(
     protected readonly id: string,
@@ -87,12 +93,19 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
   public stream(since: Since): StreamController {
     const abort = new AbortController();
     let isAborted = false;
+    let isStarted = false;
 
     const subscription = this._stream(since, abort.signal)
       .pipe(
         takeUntil(fromEvent(abort.signal, 'abort')),
         // Delay empty arrays to avoid tight polling loops
         delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
+        tap(() => {
+          if (!isStarted) {
+            isStarted = true;
+            this.emit('started');
+          }
+        }),
         filter((events) => events.length > 0),
         concatAll()
       )
@@ -111,7 +124,7 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
         complete: () => {
           isAborted = true;
           if (!abort.signal.aborted) {
-            this.emit('complete');
+            this.emit('stopped');
           }
         },
       });
@@ -132,75 +145,62 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
    * @returns Observable that emits the item when it appears in the stream
    */
   public store<T>(item: T): Observable<T> {
-    let streamController: StreamController | undefined;
+    this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
 
     return new Observable<T>((subscriber) => {
-      this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
+      // Start streaming first
+      this.logger.debug(`[${this.id}] Starting stream from 'latest'`);
+      const streamController = this.stream('latest');
 
-      // Start streaming from oldest to catch the stored item
-      this.logger.debug(`[${this.id}] Starting stream from 'oldest'`);
-      streamController = this.stream('oldest');
-      let matcher: ((event: TEvent) => boolean) | undefined;
+      // Wait for stream to start, then store item
+      const started$ = fromEvent(this, 'started').pipe(
+        first(),
+        tap(() =>
+          this.logger.debug(`[${this.id}] Stream started, now storing item`)
+        ),
+        switchMap(() => this._store(item))
+      );
 
-      // Store the item
-      const storeSubscription = this._store(item).subscribe({
-        next: (matcherFn) => {
-          // Item stored successfully, now wait for it to appear in stream
-          this.logger.debug(
-            `[${this.id}] Item stored, waiting for stream event`
-          );
-          matcher = matcherFn;
+      const eventStream$ = (
+        fromEvent(this, 'event') as Observable<TEvent>
+      ).pipe(
+        takeUntil(fromEvent(this, 'error')), // Cancel on stream error
+        takeUntil(fromEvent(this, 'complete')) // Cancel if stream completes
+      );
+
+      const storeAndWait$ = combineLatest([started$, eventStream$]).pipe(
+        filter(([matcher, event]) => {
+          const matches = matcher(event);
+          if (matches) {
+            this.logger.info(
+              `[${this.id}] Event matched! Completing store operation`
+            );
+          } else {
+            this.logger.debug(`[${this.id}] Event did not match stored item`);
+          }
+          return matches;
+        }),
+        first(), // Take only the first matching event
+        map(() => item) // Return the original item
+      );
+
+      const subscription = storeAndWait$.subscribe({
+        next: (result) => {
+          streamController.abort();
+          subscriber.next(result);
+          subscriber.complete();
         },
         error: (error) => {
-          this.logger.error(`[${this.id}] Store failed:`, error);
-          streamController?.abort();
+          this.logger.error(`[${this.id}] Store operation failed:`, error);
+          streamController.abort();
           subscriber.error(error);
         },
       });
 
-      // Listen for events that match our stored item
-      const eventHandler = (event: TEvent): void => {
-        this.logger.debug(
-          `[${this.id}] Received stream event, checking match...`
-        );
-        if (matcher && matcher(event)) {
-          this.logger.info(
-            `[${this.id}] Event matched! Completing store operation`
-          );
-          streamController?.abort();
-          storeSubscription.unsubscribe();
-          subscriber.next(item);
-          subscriber.complete();
-        } else {
-          this.logger.debug(`[${this.id}] Event did not match stored item`);
-        }
-      };
-
-      const errorHandler = (error: Error): void => {
-        this.logger.error(`[${this.id}] Stream error:`, error);
-        streamController?.abort();
-        storeSubscription.unsubscribe();
-        subscriber.error(error);
-      };
-
-      const completeHandler = (): void => {
-        this.logger.debug(`[${this.id}] Stream completed before item appeared`);
-        streamController?.abort();
-        storeSubscription.unsubscribe();
-        subscriber.error(new Error('Stream completed before item appeared'));
-      };
-
-      this.on('event', eventHandler);
-      this.on('error', errorHandler);
-      this.on('complete', completeHandler);
-
       // Cleanup function
       return () => {
-        this.off('event', eventHandler);
-        this.off('error', errorHandler);
-        this.off('complete', completeHandler);
-        streamController?.abort();
-        storeSubscription.unsubscribe();
+        streamController.abort();
+        subscription.unsubscribe();
       };
     });
   }

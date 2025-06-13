@@ -167,7 +167,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         switchMap(({ newShards }) => newShards),
         switchMap((shard) => {
           this.logger.debug(
-            `[${this.id}] Getting iterator for shard: ${shard.ShardId}`
+            `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
           );
           return this.streamClient
             .send(
@@ -535,7 +535,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   protected _store<T>(item: T): Observable<(event: _Record) => boolean> {
-    this.logger.debug(`[${this.id}] Starting store operation for item:`, item);
+    this.logger.debug(
+      `[${this.id}] Starting store operation for item at ${Date.now()}:`,
+      item
+    );
     const timestamp = Date.now();
     const hashKeyValue = `item-${timestamp}`;
     const rangeKeyValue = `${timestamp}`;

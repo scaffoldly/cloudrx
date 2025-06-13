@@ -104,3 +104,6 @@ npm run build             # Build for production
 
 ## Development Workflow
 - after you make changes, run `npm run lint` and fix any issues
+
+## Development Principles
+- don't arbitrarily add delays, investigate the race conditions
