@@ -21,6 +21,7 @@ import {
   of,
   ReplaySubject,
   scan,
+  shareReplay,
   Subject,
   switchMap,
   takeUntil,
@@ -45,8 +46,7 @@ export type DynamoDBProviderOptions = {
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
-  private static instances: Record<string, ReplaySubject<DynamoDBProvider>> =
-    {};
+  private static instances: Record<string, Observable<DynamoDBProvider>> = {};
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -103,15 +103,12 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     options: DynamoDBProviderOptions
   ): Observable<DynamoDBProvider> {
     if (!DynamoDBProvider.instances[id]) {
-      DynamoDBProvider.instances[id] = new ReplaySubject<DynamoDBProvider>(1);
-      return new DynamoDBProvider(id, options)
+      DynamoDBProvider.instances[id] = new DynamoDBProvider(id, options)
         .init()
-        .pipe(
-          tap((provider) => DynamoDBProvider.instances[id]?.next(provider))
-        );
+        .pipe(shareReplay(1));
     }
 
-    return DynamoDBProvider.instances[id].asObservable();
+    return DynamoDBProvider.instances[id];
   }
 
   protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
