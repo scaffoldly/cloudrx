@@ -135,17 +135,24 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
     let streamController: StreamController | undefined;
 
     return new Observable<T>((subscriber) => {
-      // Start streaming from latest to catch the stored item
-      streamController = this.stream('latest');
+      this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
+
+      // Start streaming from oldest to catch the stored item
+      this.logger.debug(`[${this.id}] Starting stream from 'oldest'`);
+      streamController = this.stream('oldest');
       let matcher: ((event: TEvent) => boolean) | undefined;
 
       // Store the item
       const storeSubscription = this._store(item).subscribe({
         next: (matcherFn) => {
           // Item stored successfully, now wait for it to appear in stream
+          this.logger.debug(
+            `[${this.id}] Item stored, waiting for stream event`
+          );
           matcher = matcherFn;
         },
         error: (error) => {
+          this.logger.error(`[${this.id}] Store failed:`, error);
           streamController?.abort();
           subscriber.error(error);
         },
@@ -153,21 +160,31 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
 
       // Listen for events that match our stored item
       const eventHandler = (event: TEvent): void => {
+        this.logger.debug(
+          `[${this.id}] Received stream event, checking match...`
+        );
         if (matcher && matcher(event)) {
+          this.logger.info(
+            `[${this.id}] Event matched! Completing store operation`
+          );
           streamController?.abort();
           storeSubscription.unsubscribe();
           subscriber.next(item);
           subscriber.complete();
+        } else {
+          this.logger.debug(`[${this.id}] Event did not match stored item`);
         }
       };
 
       const errorHandler = (error: Error): void => {
+        this.logger.error(`[${this.id}] Stream error:`, error);
         streamController?.abort();
         storeSubscription.unsubscribe();
         subscriber.error(error);
       };
 
       const completeHandler = (): void => {
+        this.logger.debug(`[${this.id}] Stream completed before item appeared`);
         streamController?.abort();
         storeSubscription.unsubscribe();
         subscriber.error(new Error('Stream completed before item appeared'));

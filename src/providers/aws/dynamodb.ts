@@ -123,22 +123,35 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
+    this.logger.debug(
+      `[${this.id}] Starting _stream with since: ${since}, streamArn: ${this.streamArn}`
+    );
     const shardIterator = new Subject<string>();
 
     const shards = timer(0, this.shardPollingInterval)
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
-        switchMap(() =>
-          this.streamClient
+        switchMap(() => {
+          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+          return this.streamClient
             .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
               abortSignal: signal,
             })
-            .then((response) => response.StreamDescription?.Shards || [])
-            .catch((error) => {
-              this.logger.error('Failed to describe stream:', error);
-              return []; // Return empty array on error to keep polling
+            .then((response) => {
+              this.logger.debug(
+                `[${this.id}] Stream description successful, shards:`,
+                response.StreamDescription?.Shards?.length || 0
+              );
+              return response.StreamDescription?.Shards || [];
             })
-        ),
+            .catch((error) => {
+              this.logger.error(
+                `[${this.id}] Failed to describe stream:`,
+                error
+              );
+              return []; // Return empty array on error to keep polling
+            });
+        }),
         scan(
           (acc, currentShards) => {
             const newShards = currentShards.filter(
@@ -152,8 +165,11 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           { previousShards: [] as Shard[], newShards: [] as Shard[] }
         ),
         switchMap(({ newShards }) => newShards),
-        switchMap((shard) =>
-          this.streamClient
+        switchMap((shard) => {
+          this.logger.debug(
+            `[${this.id}] Getting iterator for shard: ${shard.ShardId}`
+          );
+          return this.streamClient
             .send(
               new GetShardIteratorCommand({
                 StreamArn: this.streamArn,
@@ -166,18 +182,22 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             .then((response) => {
               if (!response.ShardIterator) {
                 this.logger.error(
-                  'No ShardIterator returned for shard:',
+                  `[${this.id}] No ShardIterator returned for shard:`,
                   shard.ShardId
                 );
                 return null;
               }
+              this.logger.debug(`[${this.id}] Got shard iterator successfully`);
               return response.ShardIterator;
             })
             .catch((error) => {
-              this.logger.error('Failed to get shard iterator:', error);
+              this.logger.error(
+                `[${this.id}] Failed to get shard iterator:`,
+                error
+              );
               return null;
-            })
-        ),
+            });
+        }),
         tap((iterator) => {
           if (iterator) {
             shardIterator.next(iterator);
@@ -190,8 +210,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       takeUntil(
         fromEvent(signal, 'abort').pipe(tap(() => shards.unsubscribe()))
       ),
-      concatMap((position) =>
-        this.streamClient
+      concatMap((position) => {
+        this.logger.debug(`[${this.id}] Getting records with iterator`);
+        return this.streamClient
           .send(new GetRecordsCommand({ ShardIterator: position }), {
             abortSignal: signal,
           })
@@ -199,24 +220,41 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             const nextShardIterator = response.NextShardIterator;
             const records = response.Records || [];
 
+            this.logger.debug(
+              `[${this.id}] Got ${records.length} records from stream`
+            );
+
             if (nextShardIterator) {
               setTimeout(
                 () => {
+                  this.logger.debug(
+                    `[${this.id}] Continuing with next iterator`
+                  );
                   shardIterator.next(nextShardIterator);
                 },
                 !records.length ? 100 : 0
+              );
+            } else {
+              this.logger.debug(
+                `[${this.id}] No next iterator, stream may be closed`
               );
             }
 
             return records;
           })
-      )
+          .catch((error) => {
+            this.logger.error(`[${this.id}] Failed to get records:`, error);
+            throw error;
+          });
+      })
     );
   }
 
   protected init(): Observable<this> {
-    const describe$ = defer(() =>
-      forkJoin([
+    this.logger.info(`[${this.id}] Initializing DynamoDB provider...`);
+    const describe$ = defer(() => {
+      this.logger.debug(`[${this.id}] Describing existing table and TTL...`);
+      return forkJoin([
         this.client.send(
           new DescribeTableCommand({ TableName: this.tableName }),
           {
@@ -230,15 +268,21 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           }
         ),
       ]).pipe(
-        map(([table, ttl]) => ({
-          table: table.Table,
-          ttl: ttl.TimeToLiveDescription,
-        }))
-      )
-    );
+        map(([table, ttl]) => {
+          this.logger.debug(
+            `[${this.id}] Successfully described table and TTL`
+          );
+          return {
+            table: table.Table,
+            ttl: ttl.TimeToLiveDescription,
+          };
+        })
+      );
+    });
 
-    const create$ = defer(() =>
-      forkJoin([
+    const create$ = defer(() => {
+      this.logger.debug(`[${this.id}] Creating new table and TTL...`);
+      return forkJoin([
         this.client.send(
           new CreateTableCommand({
             TableName: this.tableName,
@@ -273,12 +317,15 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           }
         ),
       ]).pipe(
-        map(([table, ttl]) => ({
-          table: table.TableDescription,
-          ttl: ttl.TimeToLiveSpecification,
-        }))
-      )
-    );
+        map(([table, ttl]) => {
+          this.logger.debug(`[${this.id}] Successfully created table and TTL`);
+          return {
+            table: table.TableDescription,
+            ttl: ttl.TimeToLiveSpecification,
+          };
+        })
+      );
+    });
 
     const assert = (
       table?: TableDescription,
@@ -449,6 +496,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
     return check(0).pipe(
       map(({ table }) => {
+        this.logger.info(`[${this.id}] Setting table ARN and stream ARN...`);
         this._tableArn = `${table.TableArn}`;
         this._streamArn = `${table.LatestStreamArn}`;
       }),
@@ -462,6 +510,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         ])
       ),
       map(([region, credentials, endpoint]) => {
+        this.logger.debug(
+          `[${this.id}] Creating stream client with endpoint:`,
+          endpoint
+        );
         this._streamClient = endpoint
           ? new DynamoDBStreamsClient({
               region,
@@ -474,12 +526,16 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             });
       }),
       map(() => {
+        this.logger.info(
+          `[${this.id}] DynamoDB provider initialization complete!`
+        );
         return this;
       })
     );
   }
 
   protected _store<T>(item: T): Observable<(event: _Record) => boolean> {
+    this.logger.debug(`[${this.id}] Starting store operation for item:`, item);
     const timestamp = Date.now();
     const hashKeyValue = `item-${timestamp}`;
     const rangeKeyValue = `${timestamp}`;
@@ -491,6 +547,11 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       expires: Math.floor(Date.now() / 1000) + 3600, // Expire in 1 hour
     };
 
+    this.logger.debug(
+      `[${this.id}] Storing record to table ${this.tableName}:`,
+      record
+    );
+
     return from(
       this.client.send(
         new PutCommand({
@@ -501,6 +562,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       )
     ).pipe(
       map(() => {
+        this.logger.debug(
+          `[${this.id}] Successfully stored item with keys: ${hashKeyValue}, ${rangeKeyValue}`
+        );
         // Return a matcher function that checks if the event matches our stored item
         return (event: _Record): boolean => {
           const dynamoRecord = event.dynamodb;
@@ -509,13 +573,19 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
           const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
 
-          return (
-            eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue
-          );
+          const matches =
+            eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue;
+          if (matches) {
+            this.logger.debug(
+              `[${this.id}] Found matching event for stored item!`
+            );
+          }
+
+          return matches;
         };
       }),
       catchError((error) => {
-        this.logger.error('Failed to store item:', error);
+        this.logger.error(`[${this.id}] Failed to store item:`, error);
         return throwError(
           () => new FatalError(`Failed to store item: ${error.message}`)
         );

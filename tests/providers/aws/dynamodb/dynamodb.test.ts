@@ -1,4 +1,4 @@
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, lastValueFrom } from 'rxjs';
 import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
 import { DynamoDBLocalContainer } from './local';
@@ -85,22 +85,22 @@ describe('aws-dynamodb', () => {
     expect(instance.streamArn).toBeDefined();
   });
 
-  //   test('stores-a-single-item', async () => {
-  //     const testName = expect.getState().currentTestName!;
-  //     const options: DynamoDBProviderOptions = {
-  //       client: container.getClient(),
-  //       hashKey: 'hashKey',
-  //       rangeKey: 'rangeKey',
-  //       signal: abort.signal,
-  //     };
+  test('stores-items', async () => {
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: abort.signal,
+      logger: console,
+    };
 
-  //     const instance = await firstValueFrom(
-  //       DynamoDBProvider.from(testName, options)
-  //     );
+    const instance = await firstValueFrom(
+      DynamoDBProvider.from(testId(), options)
+    );
 
-  //     const testData = { message: 'test', timestamp: Date.now() };
-  //     const storedData = await lastValueFrom(instance.store(testData));
+    const testData = { message: 'test', timestamp: Date.now() };
+    const storedData = await lastValueFrom(instance.store(testData));
 
-  //     expect(storedData).toEqual(testData);
-  //   });
+    expect(storedData).toEqual(testData);
+  }, 10000);
 });
