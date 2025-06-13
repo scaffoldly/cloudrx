@@ -3,12 +3,15 @@ import {
   StartedTestContainer,
   TestContainer,
 } from 'testcontainers';
-import { DynamoDBClient, CreateTableCommand } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBClient,
+  CreateTableCommand,
+  StreamViewType,
+} from '@aws-sdk/client-dynamodb';
 import pino from 'pino';
 
 const logger = pino({
   name: 'cloudrx-dynamodb-container',
-  level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
 });
 
 export class DynamoDBLocalContainer {
@@ -114,6 +117,10 @@ export class DynamoDBLocalContainer {
             { AttributeName: 'key', AttributeType: 'S' },
           ],
           BillingMode: 'PAY_PER_REQUEST',
+          StreamSpecification: {
+            StreamEnabled: true,
+            StreamViewType: StreamViewType.NEW_AND_OLD_IMAGES,
+          },
         })
       );
 

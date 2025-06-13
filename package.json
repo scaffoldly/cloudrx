@@ -17,13 +17,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "jest": "NODE_OPTIONS='--experimental-vm-modules' jest",
-    "test": "npm run jest",
-    "test:watch": "npm run jest -- --watch",
-    "test:verbose": "npm run jest -- --verbose --silent=false",
-    "test:integration": "npm run jest -- --selectProjects integration --testTimeout=30000",
-    "test:integration:watch": "npm run jest -- --selectProjects integration --watch --testTimeout=30000",
-    "test:integration:verbose": "npm run jest -- --selectProjects integration --verbose --silent=false --testTimeout=30000",
-    "test:all": "npm run test:verbose && npm run test:integration:verbose"
+    "test": "npm run jest -- --testTimeout=30000",
+    "test:watch": "npm run jest -- --watch"
   },
   "keywords": [
     "rxjs",
@@ -38,6 +33,7 @@
   "license": "GPL-3.0",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.823.0",
+    "@aws-sdk/client-dynamodb-streams": "^3.823.0",
     "@aws-sdk/lib-dynamodb": "^3.823.0",
     "pino": "^9.7.0",
     "rxjs": "^7.8.2"
@@ -86,37 +82,13 @@
         "testMatch": [
           "**/*.test.ts"
         ],
-        "setupFilesAfterEnv": [
-          "<rootDir>/tests/setup/index.ts"
-        ],
+        "globalSetup": "<rootDir>/tests/setup.ts",
         "globalTeardown": "<rootDir>/tests/teardown.ts",
         "collectCoverageFrom": [
           "src/**/*.ts",
           "!src/**/*.d.ts"
         ],
         "coverageDirectory": "coverage"
-      },
-      {
-        "displayName": "integration",
-        "preset": "ts-jest",
-        "testEnvironment": "node",
-        "roots": [
-          "<rootDir>/integration-tests"
-        ],
-        "testMatch": [
-          "**/*.integration.test.ts"
-        ],
-        "setupFilesAfterEnv": [
-          "<rootDir>/integration-tests/setup.ts"
-        ],
-        "globalTeardown": "<rootDir>/integration-tests/teardown.ts",
-        "collectCoverageFrom": [
-          "src/**/*.ts",
-          "!src/**/*.d.ts"
-        ],
-        "coverageDirectory": "coverage-integration",
-        "maxWorkers": 1,
-        "detectOpenHandles": true
       }
     ]
   }
