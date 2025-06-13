@@ -54,6 +54,13 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
+  // Map to store shared shard observables by streamArn
+  private static shardObservables: {
+    [key: string]: Observable<{
+      previousShards: Shard[];
+      newShards: Shard[];
+    }>;
+  } = {};
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -109,27 +116,25 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.shardPollingInterval || 5000;
   }
 
-  static from(
-    id: string,
-    options: DynamoDBProviderOptions
-  ): Observable<DynamoDBProvider> {
-    if (!DynamoDBProvider.instances[id]) {
-      DynamoDBProvider.instances[id] = new DynamoDBProvider(id, options)
-        .init()
-        .pipe(shareReplay(1));
-    }
+  // Get or create a shared shard observable for the given stream ARN
+  private getSharedShardObservable(signal: AbortSignal): Observable<{
+    previousShards: Shard[];
+    newShards: Shard[];
+  }> {
+    // Make sure the streamArn exists as a key in the map
+    DynamoDBProvider.shardObservables = DynamoDBProvider.shardObservables || {};
 
-    return DynamoDBProvider.instances[id];
-  }
+    // Initialize the shared observable if it doesn't exist for this stream ARN
+    if (!DynamoDBProvider.shardObservables[this.streamArn]) {
+      this.logger.debug(
+        `[${this.id}] Creating shared shard observable for stream: ${this.streamArn}`
+      );
 
-  protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
-    this.logger.debug(
-      `[${this.id}] Starting _stream with since: ${since}, streamArn: ${this.streamArn}`
-    );
-    const shardIterator = new Subject<string>();
-
-    const shards = timer(0, this.shardPollingInterval)
-      .pipe(
+      // Create the shared observable for this stream ARN
+      DynamoDBProvider.shardObservables[this.streamArn] = timer(
+        0,
+        this.shardPollingInterval
+      ).pipe(
         takeUntil(fromEvent(signal, 'abort')),
         switchMap(() => {
           this.logger.debug(`[${this.id}] Attempting to describe stream...`);
@@ -164,7 +169,40 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           },
           { previousShards: [] as Shard[], newShards: [] as Shard[] }
         ),
-        switchMap(({ newShards }) => newShards),
+        // Share the observable with all subscribers
+        shareReplay(1)
+      );
+    }
+
+    // The observable must exist at this point
+    return DynamoDBProvider.shardObservables[this.streamArn]!;
+  }
+
+  static from(
+    id: string,
+    options: DynamoDBProviderOptions
+  ): Observable<DynamoDBProvider> {
+    if (!DynamoDBProvider.instances[id]) {
+      DynamoDBProvider.instances[id] = new DynamoDBProvider(id, options)
+        .init()
+        .pipe(shareReplay(1));
+    }
+
+    return DynamoDBProvider.instances[id];
+  }
+
+  protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
+    this.logger.debug(
+      `[${this.id}] Starting _stream with since: ${since}, streamArn: ${this.streamArn}`
+    );
+    const shardIterator = new Subject<string>();
+
+    // Create a local subscription to the shared shard observable
+    const shardSubscription = this.getSharedShardObservable(signal)
+      .pipe(
+        takeUntil(fromEvent(signal, 'abort')),
+        // Only operate on the newShards to avoid processing duplicates
+        switchMap(({ newShards }) => from(newShards)),
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
@@ -208,7 +246,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
     return shardIterator.pipe(
       takeUntil(
-        fromEvent(signal, 'abort').pipe(tap(() => shards.unsubscribe()))
+        fromEvent(signal, 'abort').pipe(
+          tap(() => shardSubscription.unsubscribe())
+        )
       ),
       concatMap((position) => {
         this.logger.debug(`[${this.id}] Getting records with iterator`);
