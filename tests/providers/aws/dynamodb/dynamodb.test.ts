@@ -113,7 +113,7 @@ describe('aws-dynamodb', () => {
     expect(storedData).toEqual(testData);
   });
 
-  describe('shared shard observable pattern', () => {
+  describe('shard-observation', () => {
     // Create a class that mimics the behavior of DynamoDBProvider's shards getter
     class SharedObservablePattern {
       // Private property to store the observable
@@ -142,7 +142,7 @@ describe('aws-dynamodb', () => {
       }
     }
 
-    test('returns the same observable instance across multiple streams', () => {
+    test('multiple-streams', () => {
       // Create an instance of our pattern class
       const provider = new SharedObservablePattern();
 
@@ -160,7 +160,7 @@ describe('aws-dynamodb', () => {
       expect(stream1.observable).toBe((provider as any)._shards);
     });
 
-    test('initializes the observable only once', () => {
+    test('only-once', () => {
       const provider = new SharedObservablePattern();
 
       // Create a spy on the getter
@@ -214,7 +214,7 @@ describe('aws-dynamodb', () => {
         }
       }
 
-      test('shards observable should be shared across multiple streams', () => {
+      test('multiple-streams', () => {
         // Create a provider instance with our test implementation
         const provider = new MockProvider();
 
@@ -241,7 +241,7 @@ describe('aws-dynamodb', () => {
         expect(stream2.shards.id).toBe(stream3.shards.id);
       });
 
-      test('shards observable should be initialized only once', () => {
+      test('only-once', () => {
         // Create a provider to test
         const provider = new MockProvider();
 
@@ -267,7 +267,7 @@ describe('aws-dynamodb', () => {
   });
 
   describe('shard integration tests', () => {
-    test('multiple streams share the same shard observable', async () => {
+    test('multiple-streams', async () => {
       // Skip this test in CI environment
       if (process.env.CI) {
         console.log('Skipping integration test in CI environment');

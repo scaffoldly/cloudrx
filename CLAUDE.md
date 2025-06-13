@@ -58,6 +58,7 @@ npm run build             # Build for production
 - **IMPORTANT**: If you experiment and modify tests during development, you MUST restore the test to its normal/correct state before considering the objective complete
 - Tests should properly verify the functionality they claim to test (e.g., 'is-a-singleton' should actually test that the same instance is returned)
 - Use the `getTestName()` helper function to sanitize Jest test names for DynamoDB table names
+- Use short but descriptive names for tests (e.g., 'multiple-streams', 'only-once', 'shard-observation')
 - Always clean up resources properly in test teardown
 
 ## Testing Notes
