@@ -104,6 +104,8 @@ npm run build             # Build for production
 
 ## Development Workflow
 - after you make changes, run `npm run lint` and fix any issues
+- always run `npm test` and `npx tsc --noEmit` before committing to ensure all tests pass
+- fix any failing tests or type errors before committing
 
 ## Development Principles
 - don't arbitrarily add delays, investigate the race conditions

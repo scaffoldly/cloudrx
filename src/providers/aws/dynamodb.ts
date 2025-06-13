@@ -20,6 +20,7 @@ import {
   combineLatest,
   concatMap,
   defer,
+  filter,
   forkJoin,
   from,
   fromEvent,
@@ -151,20 +152,15 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               return []; // Return empty array on error to keep polling
             });
         }),
-        scan(
-          (previousShards, currentShards) => {
-            // Only emit shards we haven't seen before
-            return currentShards.filter(
-              (shard) =>
-                !previousShards.some(
-                  (prev) => prev.ShardId === shard.ShardId
-                )
-            );
-          },
-          [] as Shard[]
-        ),
+        scan((previousShards, currentShards) => {
+          // Only emit shards we haven't seen before
+          return currentShards.filter(
+            (shard) =>
+              !previousShards.some((prev) => prev.ShardId === shard.ShardId)
+          );
+        }, [] as Shard[]),
         // Only emit when there are new shards
-        filter(newShards => newShards.length > 0),
+        filter((newShards) => newShards.length > 0),
         // Share the observable with all subscribers
         shareReplay(1)
       );
@@ -198,7 +194,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
         // Process new shards
-        switchMap(newShards => from(newShards)),
+        switchMap((newShards) => from(newShards)),
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
