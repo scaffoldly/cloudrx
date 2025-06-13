@@ -56,10 +56,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Map to store shared shard observables by streamArn
   private static shardObservables: {
-    [key: string]: Observable<{
-      previousShards: Shard[];
-      newShards: Shard[];
-    }>;
+    [key: string]: Observable<Shard[]>;
   } = {};
 
   private client: DynamoDBDocumentClient;
@@ -117,10 +114,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   // Get or create a shared shard observable for the given stream ARN
-  private getSharedShardObservable(signal: AbortSignal): Observable<{
-    previousShards: Shard[];
-    newShards: Shard[];
-  }> {
+  private getSharedShardObservable(signal: AbortSignal): Observable<Shard[]> {
     // Make sure the streamArn exists as a key in the map
     DynamoDBProvider.shardObservables = DynamoDBProvider.shardObservables || {};
 
@@ -158,17 +152,19 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
             });
         }),
         scan(
-          (acc, currentShards) => {
-            const newShards = currentShards.filter(
+          (previousShards, currentShards) => {
+            // Only emit shards we haven't seen before
+            return currentShards.filter(
               (shard) =>
-                !acc.previousShards.some(
+                !previousShards.some(
                   (prev) => prev.ShardId === shard.ShardId
                 )
             );
-            return { previousShards: currentShards, newShards };
           },
-          { previousShards: [] as Shard[], newShards: [] as Shard[] }
+          [] as Shard[]
         ),
+        // Only emit when there are new shards
+        filter(newShards => newShards.length > 0),
         // Share the observable with all subscribers
         shareReplay(1)
       );
@@ -201,8 +197,8 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     const shardSubscription = this.getSharedShardObservable(signal)
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
-        // Only operate on the newShards to avoid processing duplicates
-        switchMap(({ newShards }) => from(newShards)),
+        // Process new shards
+        switchMap(newShards => from(newShards)),
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
