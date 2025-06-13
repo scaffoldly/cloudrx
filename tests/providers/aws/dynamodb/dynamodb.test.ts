@@ -1,4 +1,5 @@
-import { Observable, Subject, firstValueFrom, lastValueFrom } from 'rxjs';
+import { Observable, Subject, firstValueFrom, lastValueFrom, from } from 'rxjs';
+import { deepEqual } from 'fast-equals';
 import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
 import { DynamoDBLocalContainer } from './local';
@@ -131,7 +132,7 @@ describe('aws-dynamodb', () => {
       testItems.push({ message: `test-${i}`, timestamp: Date.now() + i });
     }
 
-    // Store all items and collect results
+    // Store items sequentially to avoid potential race conditions
     const storedItems = [];
     for (const item of testItems) {
       const storedData = await lastValueFrom(instance.store(item));
@@ -189,8 +190,25 @@ describe('aws-dynamodb', () => {
       await lastValueFrom(provider1.store(item));
     }
 
-    // Wait a short time for events to propagate
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Use Promise.all with Array.from to gather all lastValueFrom calls
+    // This eliminates the need for an arbitrary timeout
+    const promises = testItems.map(item => {
+      // Create a Promise that will resolve when the event is received by both providers
+      return new Promise<void>(resolve => {
+        const checkEvents = () => {
+          // Check if both event arrays have received all events
+          if (events1.length >= testItems.length && events2.length >= testItems.length) {
+            resolve();
+          } else {
+            setTimeout(checkEvents, 100); // Check again after a short delay
+          }
+        };
+        checkEvents();
+      });
+    });
+
+    // Wait for all events to be processed
+    await Promise.all(promises);
 
     // Abort to complete the streams
     stream1.abort();
@@ -203,13 +221,21 @@ describe('aws-dynamodb', () => {
 
     // Events should be in the same order
     for (let i = 0; i < events1.length; i++) {
-      // Skip the type checking for this test since we know the data structure
-      // TypeScript doesn't fully understand the nested structure of DynamoDB records
-      // @ts-expect-error DynamoDB record structure is known at runtime
-      const data1 = events1[i].dynamodb?.NewImage?.data?.M;
-      // @ts-expect-error DynamoDB record structure is known at runtime
-      const data2 = events2[i].dynamodb?.NewImage?.data?.M;
-      expect(data1).toEqual(data2);
+      // Since TypeScript doesn't understand the nested DynamoDB structure well,
+      // we need to use type assertions and any type
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dynamodb1 = events1[i]?.dynamodb as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dynamodb2 = events2[i]?.dynamodb as any;
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data1 = dynamodb1?.NewImage?.data?.M;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data2 = dynamodb2?.NewImage?.data?.M;
+      
+      // Use deepEqual from fast-equals for comparison
+      expect(deepEqual(data1, data2)).toBe(true);
     }
   });
 

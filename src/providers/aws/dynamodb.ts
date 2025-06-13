@@ -1,3 +1,4 @@
+import { deepEqual } from 'fast-equals';
 import {
   CreateTableCommand,
   DescribeTableCommand,
@@ -54,6 +55,15 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
+  // Marshal/unmarshal functions for working with DynamoDB data
+  static marshal<T>(item: T): Record<string, any> {
+    return { M: item };
+  }
+
+  static unmarshal<T>(dynamoData: any): T | undefined {
+    if (!dynamoData || !dynamoData.M) return undefined;
+    return dynamoData.M as T;
+  }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
   private _shards?: Observable<Shard>;
