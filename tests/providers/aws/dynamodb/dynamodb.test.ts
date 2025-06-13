@@ -10,14 +10,14 @@ describe('AWS DynamoDB Provider Tests', () => {
   beforeAll(async () => {
     container = new DynamoDBLocalContainer();
     await container.start();
-  }, 30000); // Increased timeout to allow more time for container startup
+  }); // Using global timeout from package.json
 
   afterAll(async () => {
     abort.abort();
     if (container) {
       await container.stop();
     }
-  }, 30000); // Increased timeout for cleanup
+  }); // Using global timeout from package.json
 
   test('is a singleton', async () => {
     const id = 'is-a-singleton';
@@ -38,7 +38,7 @@ describe('AWS DynamoDB Provider Tests', () => {
 
     expect(instance1.tableName).toBe(`cloudrx-${id}`);
     expect(instance2.tableName).toBe(`cloudrx-${id}`);
-  }, 30000); // Added timeout for the test
+  }); // Using global timeout from package.json
 
   test('Sets Table ARN', async () => {
     const id = 'sets-table-arn';
@@ -52,7 +52,7 @@ describe('AWS DynamoDB Provider Tests', () => {
     const instance = await firstValueFrom(DynamoDBProvider.from(id, options));
 
     expect(instance.tableArn).toBeDefined();
-  }, 30000); // Added timeout for the test
+  }); // Using global timeout from package.json
 
   test('Sets Stream ARN', async () => {
     const id = 'sets-stream-arn';
@@ -66,5 +66,5 @@ describe('AWS DynamoDB Provider Tests', () => {
     const instance = await firstValueFrom(DynamoDBProvider.from(id, options));
 
     expect(instance.streamArn).toBeDefined();
-  }, 30000); // Added timeout for the test
+  }); // Using global timeout from package.json
 });
