@@ -190,12 +190,6 @@ describe('aws-dynamodb', () => {
 
   describe('shard integration tests', () => {
     test('multiple-streams', async () => {
-      // Skip this test in CI environment
-      if (process.env.CI) {
-        console.log('Skipping integration test in CI environment');
-        return;
-      }
-
       const options: DynamoDBProviderOptions = {
         client: container.getClient(),
         hashKey: 'hashKey',

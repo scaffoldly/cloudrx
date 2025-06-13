@@ -60,6 +60,7 @@ npm run build             # Build for production
 - Use the `getTestName()` helper function to sanitize Jest test names for DynamoDB table names
 - Use short but descriptive names for tests (e.g., 'multiple-streams', 'only-once', 'shard-observation')
 - Always clean up resources properly in test teardown
+- NEVER skip tests in CI environments - ensure all tests can run successfully in CI
 
 ## Testing Notes
 
