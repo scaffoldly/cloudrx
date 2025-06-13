@@ -56,7 +56,7 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
-  private shardObservable?: Observable<Shard>;
+  private _shards?: Observable<Shard>;
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -113,10 +113,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   // Get or create a shared shard observable
-  private getSharedShardObservable(signal: AbortSignal): Observable<Shard> {
+  private get shards(): Observable<Shard> {
     // Return existing observable if it exists
-    if (this.shardObservable) {
-      return this.shardObservable;
+    if (this._shards) {
+      return this._shards;
     }
 
     this.logger.debug(
@@ -124,13 +124,13 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     );
 
     // Create the shared observable
-    this.shardObservable = timer(0, this.shardPollingInterval).pipe(
-      takeUntil(fromEvent(signal, 'abort')),
+    this._shards = timer(0, this.shardPollingInterval).pipe(
+      takeUntil(fromEvent(this.signal, 'abort')),
       switchMap(() => {
         this.logger.debug(`[${this.id}] Attempting to describe stream...`);
         return this.streamClient
           .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-            abortSignal: signal,
+            abortSignal: this.signal,
           })
           .then((response) => {
             this.logger.debug(
@@ -159,7 +159,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       shareReplay(1)
     );
 
-    return this.shardObservable;
+    return this._shards;
   }
 
   static from(
@@ -182,7 +182,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     const shardIterator = new Subject<string>();
 
     // Create a local subscription to the shared shard observable
-    const shardSubscription = this.getSharedShardObservable(signal)
+    const shardSubscription = this.shards
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
         // Process each shard
