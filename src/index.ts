@@ -1,4 +1,10 @@
-export * from './subjects';
 export * from './operators';
 export * from './providers';
-export * from './utils';
+
+export interface Logger {
+  trace?: (...content: unknown[]) => void;
+  debug: (...content: unknown[]) => void;
+  info: (...content: unknown[]) => void;
+  warn: (...content: unknown[]) => void;
+  error: (...content: unknown[]) => void;
+}

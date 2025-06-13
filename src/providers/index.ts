@@ -10,11 +10,17 @@ import {
   timer,
 } from 'rxjs';
 import { EventEmitter } from 'stream';
+import { Logger } from '..';
 
 export * from './aws';
 
 export type Consistency = 'weak' | 'strong';
 export type Since = 'oldest' | 'latest';
+
+export type CloudProviderOptions = {
+  signal: AbortSignal;
+  logger?: Logger;
+};
 
 export abstract class CloudProvider<Event> extends EventEmitter<{
   event: [Event];

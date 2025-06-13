@@ -7,7 +7,13 @@ import {
   TimeToLiveDescription,
   UpdateTimeToLiveCommand,
 } from '@aws-sdk/client-dynamodb';
-import { CloudProvider, FatalError, RetryError, Since } from '..';
+import {
+  CloudProvider,
+  CloudProviderOptions,
+  FatalError,
+  RetryError,
+  Since,
+} from '..';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   catchError,
@@ -19,7 +25,6 @@ import {
   map,
   Observable,
   of,
-  ReplaySubject,
   scan,
   shareReplay,
   Subject,
@@ -37,12 +42,14 @@ import {
   GetShardIteratorCommand,
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
+import { Logger } from '../..';
 
-export type DynamoDBProviderOptions = {
+export type DynamoDBProviderOptions = CloudProviderOptions & {
   client: DynamoDBClient;
   hashKey: string;
   rangeKey: string;
-  signal: AbortSignal;
+  ttlAttribute?: string;
+  shardPollingInterval?: number;
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
@@ -98,6 +105,18 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.rangeKey;
   }
 
+  get ttlAttribute(): string {
+    return this.opts.ttlAttribute || 'expires';
+  }
+
+  get shardPollingInterval(): number {
+    return this.opts.shardPollingInterval || 5000;
+  }
+
+  get log(): Logger {
+    return this.opts.logger || console;
+  }
+
   static from(
     id: string,
     options: DynamoDBProviderOptions
@@ -114,7 +133,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
     const shardIterator = new Subject<string>();
 
-    const shards = timer(0, 5000)
+    const shards = timer(0, this.shardPollingInterval)
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
         switchMap(() =>
@@ -123,6 +142,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               abortSignal: signal,
             })
             .then((response) => response.StreamDescription?.Shards || [])
+            .catch((error) => {
+              this.log.error('Failed to describe stream:', error);
+              return []; // Return empty array on error to keep polling
+            })
         ),
         scan(
           (acc, currentShards) => {
@@ -148,9 +171,26 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               }),
               { abortSignal: signal }
             )
-            .then((response) => response.ShardIterator!)
+            .then((response) => {
+              if (!response.ShardIterator) {
+                this.log.error(
+                  'No ShardIterator returned for shard:',
+                  shard.ShardId
+                );
+                return null;
+              }
+              return response.ShardIterator;
+            })
+            .catch((error) => {
+              this.log.error('Failed to get shard iterator:', error);
+              return null;
+            })
         ),
-        tap((iterator) => shardIterator.next(iterator))
+        tap((iterator) => {
+          if (iterator) {
+            shardIterator.next(iterator);
+          }
+        })
       )
       .subscribe();
 
@@ -232,7 +272,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           new UpdateTimeToLiveCommand({
             TableName: this.tableName,
             TimeToLiveSpecification: {
-              AttributeName: 'expires',
+              AttributeName: this.ttlAttribute,
               Enabled: true,
             },
           }),
@@ -241,9 +281,12 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
           }
         ),
       ]).pipe(
-        map(([table, ttl]) => ({
+        map(([table]) => ({
           table: table.TableDescription,
-          ttl: ttl.TimeToLiveSpecification,
+          ttl: {
+            TimeToLiveStatus: 'ENABLING' as const,
+            AttributeName: this.ttlAttribute,
+          } as TimeToLiveDescription,
         }))
       )
     );
@@ -291,7 +334,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         throw new RetryError('Table is not yet active');
       }
 
-      if (ttl.TimeToLiveStatus !== 'ENABLED') {
+      if (
+        ttl.TimeToLiveStatus !== 'ENABLED' &&
+        ttl.TimeToLiveStatus !== 'ENABLING'
+      ) {
         throw new RetryError('TTL is not yet enabled');
       }
 
@@ -349,11 +395,12 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
       if (
         table.AttributeDefinitions?.find(
-          (key) => key.AttributeName === 'expires' && key.AttributeType !== 'N'
+          (key) =>
+            key.AttributeName === this.ttlAttribute && key.AttributeType !== 'N'
         )
       ) {
         throw new FatalError(
-          `Table neesd a TTL attribute named "expires" of type number`
+          `Table needs a TTL attribute named "${this.ttlAttribute}" of type number`
         );
       }
 
@@ -367,8 +414,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
         );
       }
 
-      if (ttl?.AttributeName !== 'expires') {
-        throw new FatalError(`TTL attribute needs to be named expires`);
+      if (ttl?.AttributeName !== this.ttlAttribute) {
+        throw new FatalError(
+          `TTL attribute needs to be named ${this.ttlAttribute}`
+        );
       }
 
       return { table, ttl };
