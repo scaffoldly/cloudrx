@@ -2,7 +2,7 @@ import { Observable, Subject, firstValueFrom, lastValueFrom } from 'rxjs';
 import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
 import { DynamoDBLocalContainer } from './local';
-import { Shard } from '@aws-sdk/client-dynamodb-streams';
+import { Shard, _Record } from '@aws-sdk/client-dynamodb-streams';
 
 function testId(): string {
   return expect
@@ -94,7 +94,7 @@ describe('aws-dynamodb', () => {
     expect(instance.streamArn).toBeDefined();
   });
 
-  test('stores-items', async () => {
+  test('stores-item', async () => {
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
@@ -111,6 +111,106 @@ describe('aws-dynamodb', () => {
     const storedData = await lastValueFrom(instance.store(testData));
 
     expect(storedData).toEqual(testData);
+  });
+
+  test('stores-items', async () => {
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: abort.signal,
+      logger: console,
+    };
+
+    const instance = await firstValueFrom(
+      DynamoDBProvider.from(testId(), options)
+    );
+
+    const testItems = [];
+    for (let i = 0; i < 10; i++) {
+      testItems.push({ message: `test-${i}`, timestamp: Date.now() + i });
+    }
+
+    // Store all items and collect results
+    const storedItems = [];
+    for (const item of testItems) {
+      const storedData = await lastValueFrom(instance.store(item));
+      storedItems.push(storedData);
+    }
+
+    // Verify all items were stored correctly
+    expect(storedItems.length).toEqual(10);
+    for (let i = 0; i < 10; i++) {
+      expect(storedItems[i]).toEqual(testItems[i]);
+    }
+  });
+
+  test('streams-items', async () => {
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: abort.signal,
+      logger: console,
+    };
+
+    // Create two providers with the same table name to test shared streams
+    const tableId = testId();
+    const provider1 = await firstValueFrom(
+      DynamoDBProvider.from(tableId, options)
+    );
+    const provider2 = await firstValueFrom(
+      DynamoDBProvider.from(tableId, options)
+    );
+
+    // Create event collectors for both providers
+    const events1: _Record[] = [];
+    const events2: _Record[] = [];
+
+    // Set up event handlers for both providers
+    provider1.on('event', (event) => {
+      events1.push(event);
+    });
+
+    provider2.on('event', (event) => {
+      events2.push(event);
+    });
+
+    // Setup streams for both providers
+    // Only store items on the first provider
+    const stream1 = provider1.stream('latest');
+    const stream2 = provider2.stream('latest');
+
+    // Store 5 items only using the first provider
+    const testItems = [];
+    for (let i = 0; i < 5; i++) {
+      const item = { message: `stream-test-${i}`, timestamp: Date.now() + i };
+      testItems.push(item);
+      await lastValueFrom(provider1.store(item));
+    }
+
+    // Wait a short time for events to propagate
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Abort to complete the streams
+    stream1.abort();
+    stream2.abort();
+
+    // Both streams should have received the same events
+    expect(events1.length).toBeGreaterThan(0);
+    expect(events2.length).toBeGreaterThan(0);
+    expect(events1.length).toEqual(events2.length);
+
+    // Events should be in the same order
+    for (let i = 0; i < events1.length; i++) {
+      // Skip the type checking for this test since we know the data structure
+      // TypeScript doesn't fully understand the nested structure of DynamoDB records
+      // @ts-expect-error DynamoDB record structure is known at runtime
+      const data1 = events1[i].dynamodb?.NewImage?.data?.M;
+      // @ts-expect-error DynamoDB record structure is known at runtime
+      const data2 = events2[i].dynamodb?.NewImage?.data?.M;
+      expect(data1).toEqual(data2);
+    }
   });
 
   describe('shard-observation', () => {
