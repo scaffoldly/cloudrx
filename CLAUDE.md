@@ -95,3 +95,6 @@ npm run build             # Build for production
 - Never log or expose AWS credentials
 - Use IAM roles with minimal required permissions
 - AbortSignal provides secure stream termination
+
+## Development Workflow
+- after you make changes, run `npm run lint` and fix any issues

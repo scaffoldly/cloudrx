@@ -14,13 +14,14 @@ import {
   RetryError,
   Since,
 } from '..';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import {
   catchError,
   combineLatest,
   concatMap,
   defer,
   forkJoin,
+  from,
   fromEvent,
   map,
   Observable,
@@ -484,6 +485,50 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
       }),
       map(() => {
         return this;
+      })
+    );
+  }
+
+  protected _store<T>(item: T): Observable<(event: _Record) => boolean> {
+    const timestamp = Date.now();
+    const hashKeyValue = `item-${timestamp}`;
+    const rangeKeyValue = `${timestamp}`;
+    const record = {
+      [this.hashKey]: hashKeyValue,
+      [this.rangeKey]: rangeKeyValue,
+      data: item,
+      timestamp,
+      expires: Math.floor(Date.now() / 1000) + 3600, // Expire in 1 hour
+    };
+
+    return from(
+      this.client.send(
+        new PutCommand({
+          TableName: this.tableName,
+          Item: record,
+        }),
+        { abortSignal: this.signal }
+      )
+    ).pipe(
+      map(() => {
+        // Return a matcher function that checks if the event matches our stored item
+        return (event: _Record): boolean => {
+          const dynamoRecord = event.dynamodb;
+          if (!dynamoRecord?.Keys) return false;
+
+          const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
+          const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
+
+          return (
+            eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue
+          );
+        };
+      }),
+      catchError((error) => {
+        this.log.error('Failed to store item:', error);
+        return throwError(
+          () => new FatalError(`Failed to store item: ${error.message}`)
+        );
       })
     );
   }
