@@ -58,7 +58,9 @@ npm run build             # Build for production
 - **IMPORTANT**: If you experiment and modify tests during development, you MUST restore the test to its normal/correct state before considering the objective complete
 - Tests should properly verify the functionality they claim to test (e.g., 'is-a-singleton' should actually test that the same instance is returned)
 - Use the `getTestName()` helper function to sanitize Jest test names for DynamoDB table names
+- Use short but descriptive names for tests (e.g., 'multiple-streams', 'only-once', 'shard-observation')
 - Always clean up resources properly in test teardown
+- NEVER skip tests in CI environments - ensure all tests can run successfully in CI
 
 ## Testing Notes
 
@@ -104,6 +106,10 @@ npm run build             # Build for production
 
 ## Development Workflow
 - after you make changes, run `npm run lint` and fix any issues
+- always run `npm test` and `npx tsc --noEmit` before committing to ensure all tests pass
+- fix any failing tests or type errors before committing
 
 ## Development Principles
 - don't arbitrarily add delays, investigate the race conditions
+- prefer early return pattern for conditionals (if condition, return) rather than large if-else blocks
+- use `unknown` instead of `any` for type safety, never disable ESLint rules

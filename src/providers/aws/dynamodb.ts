@@ -7,6 +7,7 @@ import {
   TimeToLiveDescription,
   UpdateTimeToLiveCommand,
 } from '@aws-sdk/client-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   CloudProvider,
   CloudProviderOptions,
@@ -20,6 +21,7 @@ import {
   combineLatest,
   concatMap,
   defer,
+  filter,
   forkJoin,
   from,
   fromEvent,
@@ -53,7 +55,29 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
+  // Marshal/unmarshal functions for working with DynamoDB data using the AWS SDK utilities
+  static marshal<T>(item: T): Record<string, unknown> {
+    return marshall(item);
+  }
+
+  static unmarshall<T>(dynamoData: unknown): T | undefined {
+    if (!dynamoData) return undefined;
+
+    // Handle M attribute in AttributeValue which contains the actual data
+    // This is how data is stored in DynamoDB streams records
+    if (typeof dynamoData === 'object' && dynamoData !== null) {
+      const typedData = dynamoData as Record<string, unknown>;
+      if ('M' in typedData) {
+        return typedData.M as T;
+      }
+    }
+
+    // We need to use a type assertion here for AWS SDK compatibility
+    return unmarshall(dynamoData as Record<string, unknown>) as T;
+  }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
+  // Observable for tracking shards
+  private _shards?: Observable<Shard>;
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -109,6 +133,56 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.shardPollingInterval || 5000;
   }
 
+  // Get or create a shared shard observable
+  private get shards(): Observable<Shard> {
+    // Return existing observable if it exists
+    if (this._shards) {
+      return this._shards;
+    }
+
+    this.logger.debug(
+      `[${this.id}] Creating shared shard observable for stream: ${this.streamArn}`
+    );
+
+    // Create the shared observable
+    this._shards = timer(0, this.shardPollingInterval).pipe(
+      takeUntil(fromEvent(this.signal, 'abort')),
+      switchMap(() => {
+        this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+        return this.streamClient
+          .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
+            abortSignal: this.signal,
+          })
+          .then((response) => {
+            this.logger.debug(
+              `[${this.id}] Stream description successful, shards:`,
+              response.StreamDescription?.Shards?.length || 0
+            );
+            return response.StreamDescription?.Shards || [];
+          })
+          .catch((error) => {
+            this.logger.error(`[${this.id}] Failed to describe stream:`, error);
+            return []; // Return empty array on error to keep polling
+          });
+      }),
+      scan((previousShards, currentShards) => {
+        // Only emit shards we haven't seen before
+        return currentShards.filter(
+          (shard) =>
+            !previousShards.some((prev) => prev.ShardId === shard.ShardId)
+        );
+      }, [] as Shard[]),
+      // Only emit when there are new shards
+      filter((newShards) => newShards.length > 0),
+      // Flatten the array to emit individual shards
+      switchMap((shards) => from(shards)),
+      // Share the observable with all subscribers
+      shareReplay(1)
+    );
+
+    return this._shards;
+  }
+
   static from(
     id: string,
     options: DynamoDBProviderOptions
@@ -128,43 +202,11 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     );
     const shardIterator = new Subject<string>();
 
-    const shards = timer(0, this.shardPollingInterval)
+    // Create a local subscription to the shared shard observable
+    const shardSubscription = this.shards
       .pipe(
         takeUntil(fromEvent(signal, 'abort')),
-        switchMap(() => {
-          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
-          return this.streamClient
-            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-              abortSignal: signal,
-            })
-            .then((response) => {
-              this.logger.debug(
-                `[${this.id}] Stream description successful, shards:`,
-                response.StreamDescription?.Shards?.length || 0
-              );
-              return response.StreamDescription?.Shards || [];
-            })
-            .catch((error) => {
-              this.logger.error(
-                `[${this.id}] Failed to describe stream:`,
-                error
-              );
-              return []; // Return empty array on error to keep polling
-            });
-        }),
-        scan(
-          (acc, currentShards) => {
-            const newShards = currentShards.filter(
-              (shard) =>
-                !acc.previousShards.some(
-                  (prev) => prev.ShardId === shard.ShardId
-                )
-            );
-            return { previousShards: currentShards, newShards };
-          },
-          { previousShards: [] as Shard[], newShards: [] as Shard[] }
-        ),
-        switchMap(({ newShards }) => newShards),
+        // Process each shard
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
@@ -208,7 +250,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
     return shardIterator.pipe(
       takeUntil(
-        fromEvent(signal, 'abort').pipe(tap(() => shards.unsubscribe()))
+        fromEvent(signal, 'abort').pipe(
+          tap(() => shardSubscription.unsubscribe())
+        )
       ),
       concatMap((position) => {
         this.logger.debug(`[${this.id}] Getting records with iterator`);
