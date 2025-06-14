@@ -112,3 +112,5 @@ npm run build             # Build for production
 ## Development Principles
 - don't arbitrarily add delays, investigate the race conditions
 - prefer early return pattern for conditionals (if condition, return) rather than large if-else blocks
+- never use eslint-disable comments, instead fix the underlying code issue
+- use `unknown` type instead of `any` for better type safety

@@ -16,8 +16,8 @@ function testId(): string {
 function getShardsProperty(
   provider: DynamoDBProvider
 ): Observable<Shard> | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (provider as any)._shards;
+  // Type assertion to access private property
+  return (provider as unknown as { _shards?: Observable<Shard> })._shards;
 }
 
 describe('aws-dynamodb', () => {
@@ -183,15 +183,12 @@ describe('aws-dynamodb', () => {
     const stream2 = provider2.stream('latest');
 
     // Store 5 items only using the first provider
-    const testItems = Array.from({ length: 5 }).map((_, i) => ({
-      message: `stream-test-${i}`,
-      timestamp: Date.now() + i,
-    }));
-
-    // Use Promise.all with map to store all items in parallel
-    await Promise.all(
-      testItems.map((item) => lastValueFrom(provider1.store(item)))
-    );
+    const testItems = [];
+    for (let i = 0; i < 5; i++) {
+      const item = { message: `stream-test-${i}`, timestamp: Date.now() + i };
+      testItems.push(item);
+      await lastValueFrom(provider1.store(item));
+    }
 
     // Use Promise.all with Array.from to gather all lastValueFrom calls
     // This eliminates the need for an arbitrary timeout
@@ -284,8 +281,9 @@ describe('aws-dynamodb', () => {
       expect(stream2.observable).toBe(stream3.observable);
 
       // The observable should be the same as the private property
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect(stream1.observable).toBe((provider as any)._shards);
+      expect(stream1.observable).toBe(
+        (provider as unknown as { _shards: Observable<Shard> })._shards
+      );
     });
 
     test('only-once', () => {
@@ -307,8 +305,9 @@ describe('aws-dynamodb', () => {
       expect(obs2).toBe(obs3);
 
       // The first call should have created the observable
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((provider as any)._shards).toBeDefined();
+      expect(
+        (provider as unknown as { _shards?: Observable<Shard> })._shards
+      ).toBeDefined();
 
       // Further stream creations should use the existing observable
       const stream = provider.stream('new-stream');

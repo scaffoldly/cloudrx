@@ -59,10 +59,13 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return { M: item };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static unmarshal<T>(dynamoData: any): T | undefined {
-    if (!dynamoData || !dynamoData.M) return undefined;
-    return dynamoData.M as T;
+  static unmarshal<T>(dynamoData: unknown): T | undefined {
+    // Type guard to ensure dynamoData has the expected structure
+    if (!dynamoData || typeof dynamoData !== 'object') return undefined;
+    // Cast to Record<string, unknown> after we've verified it's an object
+    const data = dynamoData as Record<string, unknown>;
+    if (!data.M) return undefined;
+    return data.M as T;
   }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
