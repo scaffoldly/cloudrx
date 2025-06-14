@@ -183,12 +183,15 @@ describe('aws-dynamodb', () => {
     const stream2 = provider2.stream('latest');
 
     // Store 5 items only using the first provider
-    const testItems = [];
-    for (let i = 0; i < 5; i++) {
-      const item = { message: `stream-test-${i}`, timestamp: Date.now() + i };
-      testItems.push(item);
-      await lastValueFrom(provider1.store(item));
-    }
+    const testItems = Array.from({ length: 5 }).map((_, i) => ({
+      message: `stream-test-${i}`,
+      timestamp: Date.now() + i,
+    }));
+
+    // Use Promise.all with map to store all items in parallel
+    await Promise.all(
+      testItems.map((item) => lastValueFrom(provider1.store(item)))
+    );
 
     // Use Promise.all with Array.from to gather all lastValueFrom calls
     // This eliminates the need for an arbitrary timeout
