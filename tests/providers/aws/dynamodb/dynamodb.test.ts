@@ -1,4 +1,4 @@
-import { Observable, Subject, firstValueFrom, lastValueFrom, from } from 'rxjs';
+import { Observable, Subject, firstValueFrom, lastValueFrom } from 'rxjs';
 import { deepEqual } from 'fast-equals';
 import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
@@ -192,12 +192,15 @@ describe('aws-dynamodb', () => {
 
     // Use Promise.all with Array.from to gather all lastValueFrom calls
     // This eliminates the need for an arbitrary timeout
-    const promises = testItems.map(item => {
+    const promises = testItems.map((_item) => {
       // Create a Promise that will resolve when the event is received by both providers
-      return new Promise<void>(resolve => {
-        const checkEvents = () => {
+      return new Promise<void>((resolve) => {
+        const checkEvents = (): void => {
           // Check if both event arrays have received all events
-          if (events1.length >= testItems.length && events2.length >= testItems.length) {
+          if (
+            events1.length >= testItems.length &&
+            events2.length >= testItems.length
+          ) {
             resolve();
           } else {
             setTimeout(checkEvents, 100); // Check again after a short delay
@@ -223,17 +226,13 @@ describe('aws-dynamodb', () => {
     for (let i = 0; i < events1.length; i++) {
       // Since TypeScript doesn't understand the nested DynamoDB structure well,
       // we need to use type assertions and any type
-      
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dynamodb1 = events1[i]?.dynamodb as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dynamodb2 = events2[i]?.dynamodb as any;
-      
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data1 = dynamodb1?.NewImage?.data?.M;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data2 = dynamodb2?.NewImage?.data?.M;
-      
+
+      const dynamodb1 = events1[i]?.dynamodb;
+      const dynamodb2 = events2[i]?.dynamodb;
+
+      const data1 = DynamoDBProvider.unmarshal(dynamodb1?.NewImage?.data);
+      const data2 = DynamoDBProvider.unmarshal(dynamodb2?.NewImage?.data);
+
       // Use deepEqual from fast-equals for comparison
       expect(deepEqual(data1, data2)).toBe(true);
     }

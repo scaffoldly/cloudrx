@@ -1,4 +1,3 @@
-import { deepEqual } from 'fast-equals';
 import {
   CreateTableCommand,
   DescribeTableCommand,
@@ -56,10 +55,11 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   // Marshal/unmarshal functions for working with DynamoDB data
-  static marshal<T>(item: T): Record<string, any> {
+  static marshal<T>(item: T): Record<string, unknown> {
     return { M: item };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static unmarshal<T>(dynamoData: any): T | undefined {
     if (!dynamoData || !dynamoData.M) return undefined;
     return dynamoData.M as T;
