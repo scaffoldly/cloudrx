@@ -60,12 +60,8 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   static unmarshal<T>(dynamoData: unknown): T | undefined {
-    // Type guard to ensure dynamoData has the expected structure
-    if (!dynamoData || typeof dynamoData !== 'object') return undefined;
-    // Cast to Record<string, unknown> after we've verified it's an object
-    const data = dynamoData as Record<string, unknown>;
-    if (!data.M) return undefined;
-    return data.M as T;
+    if (!dynamoData || !(dynamoData as { M?: unknown }).M) return undefined;
+    return (dynamoData as { M: T }).M;
   }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards

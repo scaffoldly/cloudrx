@@ -13,11 +13,8 @@ function testId(): string {
 }
 
 // Helper to access private property
-function getShardsProperty(
-  provider: DynamoDBProvider
-): Observable<Shard> | undefined {
-  // Type assertion to access private property
-  return (provider as unknown as { _shards?: Observable<Shard> })._shards;
+function getShardsProperty(provider: unknown): Observable<Shard> | undefined {
+  return (provider as { _shards?: Observable<Shard> })._shards;
 }
 
 describe('aws-dynamodb', () => {
@@ -184,11 +181,14 @@ describe('aws-dynamodb', () => {
 
     // Store 5 items only using the first provider
     const testItems = [];
+    // Use Promise.all with Array.from approach for storing items too
+    const storePromises = [];
     for (let i = 0; i < 5; i++) {
       const item = { message: `stream-test-${i}`, timestamp: Date.now() + i };
       testItems.push(item);
-      await lastValueFrom(provider1.store(item));
+      storePromises.push(lastValueFrom(provider1.store(item)));
     }
+    await Promise.all(storePromises);
 
     // Use Promise.all with Array.from to gather all lastValueFrom calls
     // This eliminates the need for an arbitrary timeout
@@ -281,8 +281,9 @@ describe('aws-dynamodb', () => {
       expect(stream2.observable).toBe(stream3.observable);
 
       // The observable should be the same as the private property
+      // Use type assertion to access the private property
       expect(stream1.observable).toBe(
-        (provider as unknown as { _shards: Observable<Shard> })._shards
+        (provider as unknown as { _shards?: Observable<Shard> })._shards
       );
     });
 
@@ -290,7 +291,11 @@ describe('aws-dynamodb', () => {
       const provider = new SharedObservablePattern();
 
       // Create a spy on the getter
-      const getSpy = jest.spyOn(provider, 'shards', 'get');
+      const getSpy = jest.spyOn(
+        provider as unknown as { shards: Observable<Shard> },
+        'shards',
+        'get'
+      );
 
       // Access the property multiple times
       const obs1 = provider.shards;
@@ -305,9 +310,7 @@ describe('aws-dynamodb', () => {
       expect(obs2).toBe(obs3);
 
       // The first call should have created the observable
-      expect(
-        (provider as unknown as { _shards?: Observable<Shard> })._shards
-      ).toBeDefined();
+      expect(getShardsProperty(provider)).toBeDefined();
 
       // Further stream creations should use the existing observable
       const stream = provider.stream('new-stream');
