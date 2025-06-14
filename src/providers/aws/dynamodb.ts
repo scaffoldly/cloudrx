@@ -55,8 +55,8 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
-  // Marshall/unmarshall functions for working with DynamoDB data using the AWS SDK utilities
-  static marshall<T>(item: T): Record<string, unknown> {
+  // Marshal/unmarshal functions for working with DynamoDB data using the AWS SDK utilities
+  static marshal<T>(item: T): Record<string, unknown> {
     return marshall(item);
   }
 
@@ -64,17 +64,16 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     if (!dynamoData) return undefined;
 
     // Handle M attribute in AttributeValue which contains the actual data
+    // This is how data is stored in DynamoDB streams records
     if (typeof dynamoData === 'object' && dynamoData !== null) {
       const typedData = dynamoData as Record<string, unknown>;
       if ('M' in typedData) {
         return typedData.M as T;
       }
-
-      // Direct unmarshalling using AWS SDK
-      return unmarshall(typedData as never) as T;
     }
 
-    return undefined;
+    // We need to use a type assertion here for AWS SDK compatibility
+    return unmarshall(dynamoData as Record<string, unknown>) as T;
   }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
