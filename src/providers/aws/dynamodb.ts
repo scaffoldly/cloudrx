@@ -7,6 +7,7 @@ import {
   TimeToLiveDescription,
   UpdateTimeToLiveCommand,
 } from '@aws-sdk/client-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   CloudProvider,
   CloudProviderOptions,
@@ -54,14 +55,34 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
-  // Marshal/unmarshal functions for working with DynamoDB data
+  // Marshal/unmarshal functions for working with DynamoDB data using the AWS SDK utilities
   static marshal<T>(item: T): Record<string, unknown> {
-    return { M: item };
+    return marshall(item);
   }
 
   static unmarshal<T>(dynamoData: unknown): T | undefined {
-    if (!dynamoData || !(dynamoData as { M?: unknown }).M) return undefined;
-    return (dynamoData as { M: T }).M;
+    if (!dynamoData) return undefined;
+
+    // Handle M attribute in AttributeValue which contains the actual data
+    // This is how data is stored in DynamoDB streams records
+    if (typeof dynamoData === 'object' && dynamoData !== null) {
+      const typedData = dynamoData as Record<string, unknown>;
+      if ('M' in typedData) {
+        return typedData.M as T;
+      }
+
+      // For direct unmarshalling of AttributeValue
+      try {
+        // We need to use the `as` cast here because the AWS SDK requires AttributeValue
+        // which is a complex union type that we can't easily represent with our typedData
+        return unmarshall(typedData as never) as T;
+      } catch {
+        // If unmarshall fails, return the data itself if possible
+        return dynamoData as T;
+      }
+    }
+
+    return undefined;
   }
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   // Observable for tracking shards
