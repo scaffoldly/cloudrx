@@ -228,8 +228,8 @@ describe('aws-dynamodb', () => {
       const dynamodb1 = events1[i]?.dynamodb;
       const dynamodb2 = events2[i]?.dynamodb;
 
-      const data1 = DynamoDBProvider.unmarshal(dynamodb1?.NewImage?.data);
-      const data2 = DynamoDBProvider.unmarshal(dynamodb2?.NewImage?.data);
+      const data1 = DynamoDBProvider.unmarshall(dynamodb1?.NewImage?.data);
+      const data2 = DynamoDBProvider.unmarshall(dynamodb2?.NewImage?.data);
 
       // Use deepEqual from fast-equals for comparison
       expect(deepEqual(data1, data2)).toBe(true);
