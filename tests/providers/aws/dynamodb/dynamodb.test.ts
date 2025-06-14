@@ -129,12 +129,10 @@ describe('aws-dynamodb', () => {
       testItems.push({ message: `test-${i}`, timestamp: Date.now() + i });
     }
 
-    // Store items sequentially to avoid potential race conditions
-    const storedItems = [];
-    for (const item of testItems) {
-      const storedData = await lastValueFrom(instance.store(item));
-      storedItems.push(storedData);
-    }
+    // Use Promise.all with Array.from.map to store items in parallel
+    const storedItems = await Promise.all(
+      testItems.map((item) => lastValueFrom(instance.store(item)))
+    );
 
     // Verify all items were stored correctly
     expect(storedItems.length).toEqual(10);
