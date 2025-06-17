@@ -29,8 +29,17 @@ export type CloudProviderOptions = {
 
 export interface StreamController {
   signal: AbortSignal;
-  abort: () => void;
+  stop: (reason?: unknown) => Promise<void>;
 }
+
+/**
+ * Marker type for streamed events
+ * @template T The type of the streamed object
+ * @template Marker The type of the marker, to identify the location of the event in the stream
+ */
+export type Streamed<T, Marker> = T & {
+  __marker__?: Marker;
+};
 
 /**
  * Abstract base class for cloud providers that stream events.
@@ -43,6 +52,8 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
   started: [];
   stopped: [];
 }> {
+  public static readonly aborts: Record<string, AbortController> = {};
+
   protected constructor(
     protected readonly id: string,
     protected readonly opts: CloudProviderOptions
@@ -51,6 +62,11 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
     if (!id || typeof id !== 'string') {
       throw new Error('CloudProvider id must be a non-empty string');
     }
+
+    CloudProvider.aborts[id] = new AbortController();
+    opts.signal.addEventListener('abort', () => {
+      CloudProvider.aborts[id]?.abort();
+    });
   }
 
   protected get logger(): Logger {
@@ -58,7 +74,11 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
   }
 
   protected get signal(): AbortSignal {
-    return this.opts.signal;
+    return CloudProvider.aborts[this.id]!.signal;
+  }
+
+  public abort(reason?: unknown): void {
+    CloudProvider.aborts[this.id]?.abort(reason);
   }
 
   /**
@@ -75,8 +95,17 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
    */
   protected abstract _stream(
     since: Since,
-    signal: AbortSignal
+    streamAbort: AbortController
   ): Observable<TEvent[]>;
+
+  /**
+   * Unmarshall a raw event into a typed object.
+   * @param event The raw event data
+   * @returns The unmarshalled object
+   * @template T The type of the unmarshalled object
+   * @throws {Error} If unmarshalling fails
+   */
+  public abstract unmarshall<T>(event: TEvent): Streamed<T, unknown>;
 
   /**
    * Store an item to the provider's backing store.
@@ -91,13 +120,12 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
    * @returns Controller to stop the stream
    */
   public stream(since: Since): StreamController {
-    const abort = new AbortController();
-    let isAborted = false;
+    const streamAbort = new AbortController();
     let isStarted = false;
 
-    const subscription = this._stream(since, abort.signal)
+    const subscription = this._stream(since, streamAbort)
       .pipe(
-        takeUntil(fromEvent(abort.signal, 'abort')),
+        takeUntil(fromEvent(streamAbort.signal, 'abort')),
         // Delay empty arrays to avoid tight polling loops
         delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
         tap(() => {
@@ -111,31 +139,28 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
       )
       .subscribe({
         next: (event) => {
-          if (!isAborted) {
-            this.emit('event', event);
-          }
+          this.emit('event', event);
         },
         error: (error) => {
-          isAborted = true;
-          if (!abort.signal.aborted) {
-            this.emit('error', error);
-          }
+          streamAbort.abort(error);
+          this.emit('error', error);
         },
         complete: () => {
-          isAborted = true;
-          if (!abort.signal.aborted) {
-            this.emit('stopped');
-          }
+          streamAbort.abort();
+          this.emit('stopped');
         },
       });
 
-    return {
-      signal: abort.signal,
-      abort: (): void => {
-        isAborted = true;
-        abort.abort();
+    const stop = (reason: unknown): Promise<void> =>
+      new Promise<void>((resolve) => {
+        streamAbort.abort(reason);
         subscription.unsubscribe();
-      },
+        resolve();
+      });
+
+    return {
+      signal: streamAbort.signal,
+      stop,
     };
   }
 
@@ -186,20 +211,23 @@ export abstract class CloudProvider<TEvent> extends EventEmitter<{
 
       const subscription = storeAndWait$.subscribe({
         next: (result) => {
-          streamController.abort();
           subscriber.next(result);
+        },
+        complete: () => {
+          this.logger.debug(`[${this.id}] Store operation complete:`, item);
+          streamController.stop();
           subscriber.complete();
         },
         error: (error) => {
           this.logger.error(`[${this.id}] Store operation failed:`, error);
-          streamController.abort();
+          streamController.stop(error);
           subscriber.error(error);
         },
       });
 
       // Cleanup function
       return () => {
-        streamController.abort();
+        streamController.stop();
         subscription.unsubscribe();
       };
     });
