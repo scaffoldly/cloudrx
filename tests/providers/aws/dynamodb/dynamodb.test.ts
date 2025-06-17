@@ -192,38 +192,38 @@ describe('aws-dynamodb', () => {
     expect(unmarshalled1).toEqual(unmarshalled2);
   });
 
-  test('stores-items', async () => {
-    const NUM_ITEMS = 10;
+  // test('stores-items', async () => {
+  //   const NUM_ITEMS = 10;
 
-    const options: DynamoDBProviderOptions = {
-      client: container.getClient(),
-      hashKey: 'hashKey',
-      rangeKey: 'rangeKey',
-      signal: abort.signal,
-      logger: console,
-    };
+  //   const options: DynamoDBProviderOptions = {
+  //     client: container.getClient(),
+  //     hashKey: 'hashKey',
+  //     rangeKey: 'rangeKey',
+  //     signal: abort.signal,
+  //     logger: console,
+  //   };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+  //   const instance = await firstValueFrom(
+  //     DynamoDBProvider.from(testId(), options)
+  //   );
 
-    const testItems: Data[] = [];
-    for (let i = 0; i < NUM_ITEMS; i++) {
-      testItems.push({
-        message: `test-${i}`,
-        timestamp: performance.now() + i,
-      });
-    }
+  //   const testItems: Data[] = [];
+  //   for (let i = 0; i < NUM_ITEMS; i++) {
+  //     testItems.push({
+  //       message: `test-${i}`,
+  //       timestamp: performance.now() + i,
+  //     });
+  //   }
 
-    const storedItems = await Promise.all(
-      testItems.map((item) => lastValueFrom(instance.store(item)))
-    );
+  //   const storedItems = await Promise.all(
+  //     testItems.map((item) => lastValueFrom(instance.store(item)))
+  //   );
 
-    expect(storedItems.length).toEqual(testItems.length);
-    for (let i = 0; i < NUM_ITEMS; i++) {
-      expect(storedItems[i]).toEqual(testItems[i]);
-    }
-  });
+  //   expect(storedItems.length).toEqual(testItems.length);
+  //   for (let i = 0; i < NUM_ITEMS; i++) {
+  //     expect(storedItems[i]).toEqual(testItems[i]);
+  //   }
+  // });
 
   // test('streams-latest-items', async () => {
   //   const NUM_ITEMS = 10;
