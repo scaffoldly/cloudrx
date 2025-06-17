@@ -7,19 +7,26 @@ import {
   TimeToLiveDescription,
   UpdateTimeToLiveCommand,
 } from '@aws-sdk/client-dynamodb';
+import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   CloudProvider,
   CloudProviderOptions,
   FatalError,
   RetryError,
   Since,
+  Streamed,
 } from '..';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  TranslateConfig,
+} from '@aws-sdk/lib-dynamodb';
 import {
   catchError,
   combineLatest,
   concatMap,
   defer,
+  filter,
   forkJoin,
   from,
   fromEvent,
@@ -49,11 +56,20 @@ export type DynamoDBProviderOptions = CloudProviderOptions & {
   hashKey: string;
   rangeKey: string;
   ttlAttribute?: string;
-  shardPollingInterval?: number;
+};
+
+export type DynamoDBStreamedData<T> = Streamed<T, string>;
+
+export type DynamoDBStoredData<T> = {
+  [x: string]: string | number | T;
+  data: T;
+  timestamp: number;
+  expires?: number;
 };
 
 export default class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
+  private static shards: Record<string, Observable<Shard>> = {};
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
@@ -62,9 +78,16 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   private _tableArn?: string;
   private _streamArn?: string;
 
+  readonly translation: TranslateConfig = {
+    marshallOptions: {},
+    unmarshallOptions: {
+      convertWithoutMapWrapper: false,
+    },
+  };
+
   protected constructor(id: string, options: DynamoDBProviderOptions) {
     super(id, options);
-    this.client = DynamoDBDocumentClient.from(options.client);
+    this.client = DynamoDBDocumentClient.from(options.client, this.translation);
     this.opts = options;
   }
 
@@ -105,8 +128,51 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.ttlAttribute || 'expires';
   }
 
-  get shardPollingInterval(): number {
-    return this.opts.shardPollingInterval || 5000;
+  private get shards(): Observable<Shard> {
+    const { id } = this;
+    if (!DynamoDBProvider.shards[id]) {
+      DynamoDBProvider.shards[id] = timer(0, 5000).pipe(
+        takeUntil(fromEvent(this.signal, 'abort')),
+        switchMap(() => {
+          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+          return from(
+            this.streamClient
+              .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
+                abortSignal: this.signal,
+              })
+              .then((response) => {
+                this.logger.debug(
+                  `[${this.id}] Stream description successful, shards:`,
+                  response.StreamDescription?.Shards?.length || 0
+                );
+                return response.StreamDescription?.Shards || [];
+              })
+              .catch((error) => {
+                this.logger.error(
+                  `[${this.id}] Failed to describe stream:`,
+                  error
+                );
+                return []; // Return empty array on error to keep polling
+              })
+          );
+        }),
+        scan((previousShards, currentShards) => {
+          // Only emit shards we haven't seen before
+          return currentShards.filter(
+            (shard) =>
+              !previousShards.some((prev) => prev.ShardId === shard.ShardId)
+          );
+        }, [] as Shard[]),
+        // Only emit when there are new shards
+        filter((newShards) => newShards.length > 0),
+        // Flatten the array to emit individual shards
+        switchMap((shards) => from(shards)),
+        // Share the observable with all subscribers
+        shareReplay(1)
+      );
+    }
+
+    return DynamoDBProvider.shards[id];
   }
 
   static from(
@@ -122,81 +188,58 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return DynamoDBProvider.instances[id];
   }
 
-  protected _stream(since: Since, signal: AbortSignal): Observable<_Record[]> {
+  protected _stream(
+    since: Since,
+    streamAbort: AbortController
+  ): Observable<_Record[]> {
+    const signal = streamAbort.signal;
+
     this.logger.debug(
       `[${this.id}] Starting _stream with since: ${since}, streamArn: ${this.streamArn}`
     );
     const shardIterator = new Subject<string>();
 
-    const shards = timer(0, this.shardPollingInterval)
+    // Create a local subscription to the shared shard observable
+    const shardSubscription = this.shards
       .pipe(
-        takeUntil(fromEvent(signal, 'abort')),
-        switchMap(() => {
-          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
-          return this.streamClient
-            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-              abortSignal: signal,
-            })
-            .then((response) => {
-              this.logger.debug(
-                `[${this.id}] Stream description successful, shards:`,
-                response.StreamDescription?.Shards?.length || 0
-              );
-              return response.StreamDescription?.Shards || [];
-            })
-            .catch((error) => {
-              this.logger.error(
-                `[${this.id}] Failed to describe stream:`,
-                error
-              );
-              return []; // Return empty array on error to keep polling
-            });
-        }),
-        scan(
-          (acc, currentShards) => {
-            const newShards = currentShards.filter(
-              (shard) =>
-                !acc.previousShards.some(
-                  (prev) => prev.ShardId === shard.ShardId
-                )
-            );
-            return { previousShards: currentShards, newShards };
-          },
-          { previousShards: [] as Shard[], newShards: [] as Shard[] }
-        ),
-        switchMap(({ newShards }) => newShards),
+        takeUntil(fromEvent(streamAbort.signal, 'abort')),
+        // Process each shard
         switchMap((shard) => {
           this.logger.debug(
             `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
           );
-          return this.streamClient
-            .send(
-              new GetShardIteratorCommand({
-                StreamArn: this.streamArn,
-                ShardId: shard.ShardId,
-                ShardIteratorType:
-                  since === 'latest' ? 'LATEST' : 'TRIM_HORIZON',
-              }),
-              { abortSignal: signal }
-            )
-            .then((response) => {
-              if (!response.ShardIterator) {
+          return from(
+            this.streamClient
+              .send(
+                new GetShardIteratorCommand({
+                  StreamArn: this.streamArn,
+                  ShardId: shard.ShardId,
+                  ShardIteratorType:
+                    since === 'latest' ? 'LATEST' : 'TRIM_HORIZON',
+                }),
+                { abortSignal: signal }
+              )
+              .then((response) => {
+                if (!response.ShardIterator) {
+                  this.logger.error(
+                    `[${this.id}] No ShardIterator returned for shard:`,
+                    shard.ShardId
+                  );
+                  return null;
+                }
+                this.logger.debug(
+                  `[${this.id}] Got shard iterator successfully`
+                );
+                return response.ShardIterator;
+              })
+              .catch((error) => {
                 this.logger.error(
-                  `[${this.id}] No ShardIterator returned for shard:`,
-                  shard.ShardId
+                  `[${this.id}] Failed to get shard iterator:`,
+                  error
                 );
                 return null;
-              }
-              this.logger.debug(`[${this.id}] Got shard iterator successfully`);
-              return response.ShardIterator;
-            })
-            .catch((error) => {
-              this.logger.error(
-                `[${this.id}] Failed to get shard iterator:`,
-                error
-              );
-              return null;
-            });
+              })
+          );
         }),
         tap((iterator) => {
           if (iterator) {
@@ -208,37 +251,45 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
 
     return shardIterator.pipe(
       takeUntil(
-        fromEvent(signal, 'abort').pipe(tap(() => shards.unsubscribe()))
+        fromEvent(signal, 'abort').pipe(
+          tap(() => shardSubscription.unsubscribe())
+        )
       ),
       concatMap((position) => {
         this.logger.debug(`[${this.id}] Getting records with iterator`);
-        return this.streamClient
-          .send(new GetRecordsCommand({ ShardIterator: position }), {
-            abortSignal: signal,
-          })
-          .then((response) => {
-            const nextShardIterator = response.NextShardIterator;
-            const records = response.Records || [];
+        return from(
+          this.streamClient
+            .send(new GetRecordsCommand({ ShardIterator: position }), {
+              abortSignal: signal,
+            })
+            .then((response) => {
+              const nextShardIterator = response.NextShardIterator;
+              const records = response.Records || [];
 
-            if (nextShardIterator) {
-              setTimeout(
-                () => {
-                  shardIterator.next(nextShardIterator);
-                },
-                !records.length ? 100 : 0
-              );
-            } else {
-              this.logger.debug(
-                `[${this.id}] No next iterator, stream may be closed`
-              );
-            }
+              if (nextShardIterator) {
+                setTimeout(
+                  () => {
+                    shardIterator.next(nextShardIterator);
+                  },
+                  !records.length ? 100 : 0
+                );
+              } else {
+                this.logger.debug(
+                  `[${this.id}] No next iterator, stream may be closed`
+                );
+              }
 
-            return records;
-          })
-          .catch((error) => {
-            this.logger.error(`[${this.id}] Failed to get records:`, error);
-            throw error;
-          });
+              return records;
+            })
+            .catch((error) => {
+              if (error.name === 'AbortError') {
+                this.logger.debug(`[${this.id}] Stream aborted`);
+                return [];
+              }
+              this.logger.error(`[${this.id}] Failed to get records:`, error);
+              throw error;
+            })
+        );
       })
     );
   }
@@ -527,6 +578,32 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     );
   }
 
+  public unmarshall<T>(event: _Record): DynamoDBStreamedData<T> {
+    const marker = event.dynamodb?.SequenceNumber;
+    if (!marker) {
+      throw new FatalError('Invalid DynamoDB record: missing SequenceNumber');
+    }
+
+    const image = event.dynamodb?.NewImage || event.dynamodb?.OldImage;
+    if (!image) {
+      throw new FatalError(
+        'Invalid DynamoDB record: missing NewImage or OldImage'
+      );
+    }
+
+    const storedData = unmarshall(
+      image,
+      this.translation.unmarshallOptions
+    ) as DynamoDBStoredData<T>;
+
+    const { data } = storedData;
+
+    return {
+      ...data,
+      __marker__: marker,
+    };
+  }
+
   protected _store<T>(item: T): Observable<(event: _Record) => boolean> {
     this.logger.debug(
       `[${this.id}] Starting store operation for item at ${Date.now()}:`,
@@ -535,7 +612,9 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     const timestamp = Date.now();
     const hashKeyValue = `item-${timestamp}`;
     const rangeKeyValue = `${timestamp}`;
-    const record = {
+
+    // TODO: Make this a hard type
+    const record: DynamoDBStoredData<T> = {
       [this.hashKey]: hashKeyValue,
       [this.rangeKey]: rangeKeyValue,
       data: item,
