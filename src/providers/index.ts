@@ -25,6 +25,7 @@ export type Since = 'oldest' | 'latest';
 export type CloudProviderOptions = {
   signal: AbortSignal;
   logger?: Logger;
+  pollInterval?: number;
 };
 
 export interface StreamController {

@@ -33,9 +33,8 @@ import {
   map,
   Observable,
   of,
-  pairwise,
+  scan,
   shareReplay,
-  startWith,
   Subject,
   switchMap,
   takeUntil,
@@ -132,7 +131,10 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
   get shards(): Observable<Shard> {
     const { id } = this;
     if (!DynamoDBProvider.shards[id]) {
-      DynamoDBProvider.shards[id] = timer(0, 5000).pipe(
+      DynamoDBProvider.shards[id] = timer(
+        0,
+        this.opts.pollInterval || 5000
+      ).pipe(
         takeUntil(fromEvent(this.signal, 'abort')),
         switchMap(() => {
           this.logger.debug(`[${this.id}] Attempting to describe stream...`);
@@ -157,20 +159,26 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               })
           );
         }),
-        startWith([] as Shard[]),
-        pairwise(),
-        map(([previousShards, currentShards]) => {
-          // Find new shards we haven't seen before
-          const newShards = currentShards.filter(
-            (shard) =>
-              !previousShards.some((prev) => prev.ShardId === shard.ShardId)
-          );
-          return newShards;
-        }),
-        // Only emit when there are new shards
-        filter((newShards) => newShards.length > 0),
         // Flatten the array to emit individual shards
         switchMap((shards) => from(shards)),
+        // Track all seen shard IDs and only emit new ones
+        scan(
+          (
+            acc: { seenShardIds: Set<string>; newShard: Shard | null },
+            shard: Shard
+          ) => {
+            if (shard.ShardId && !acc.seenShardIds.has(shard.ShardId)) {
+              acc.seenShardIds.add(shard.ShardId);
+              return { seenShardIds: acc.seenShardIds, newShard: shard };
+            }
+            return { seenShardIds: acc.seenShardIds, newShard: null };
+          },
+          { seenShardIds: new Set<string>(), newShard: null }
+        ),
+        // Only emit when we have a new shard
+        filter(({ newShard }) => newShard !== null),
+        // Extract the new shard
+        map(({ newShard }) => newShard!),
         // Share the observable with all subscribers
         shareReplay(1)
       );

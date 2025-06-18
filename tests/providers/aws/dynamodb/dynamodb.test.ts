@@ -449,6 +449,10 @@ describe('aws-dynamodb', () => {
       ShardId: 'shard-2',
       SequenceNumberRange: { StartingSequenceNumber: '2' },
     };
+    const shard3 = {
+      ShardId: 'shard-3',
+      SequenceNumberRange: { StartingSequenceNumber: '3' },
+    };
 
     mockStreamClient.send
       .mockResolvedValueOnce({ StreamDescription: { Shards: [shard1] } })
@@ -458,7 +462,12 @@ describe('aws-dynamodb', () => {
       .mockResolvedValueOnce({
         StreamDescription: { Shards: [shard1, shard2] },
       })
-      .mockResolvedValue({ StreamDescription: { Shards: [shard1, shard2] } });
+      .mockResolvedValueOnce({
+        StreamDescription: { Shards: [shard1, shard2, shard3] },
+      })
+      .mockResolvedValue({
+        StreamDescription: { Shards: [shard1, shard2, shard3] },
+      });
 
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
@@ -466,6 +475,7 @@ describe('aws-dynamodb', () => {
       rangeKey: 'rangeKey',
       signal: abort.signal,
       logger: console,
+      pollInterval: 1000, // 1 second for faster testing
     };
 
     const provider = await firstValueFrom(
@@ -480,12 +490,12 @@ describe('aws-dynamodb', () => {
       emittedShards.push(shard);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 15000));
+    await new Promise((resolve) => setTimeout(resolve, 6000)); // 6 seconds with 1s poll = 6 cycles
 
     subscription.unsubscribe();
 
-    // Should emit exactly 2 shards total
-    expect(emittedShards).toHaveLength(2);
+    // Should emit exactly 3 shards total
+    expect(emittedShards).toHaveLength(3);
 
     // Should emit each shard ID exactly once
     expect(emittedShards.filter((s) => s.ShardId === 'shard-1')).toHaveLength(
@@ -494,9 +504,12 @@ describe('aws-dynamodb', () => {
     expect(emittedShards.filter((s) => s.ShardId === 'shard-2')).toHaveLength(
       1
     );
+    expect(emittedShards.filter((s) => s.ShardId === 'shard-3')).toHaveLength(
+      1
+    );
 
     // Verify the shard IDs are the expected ones
     const shardIds = emittedShards.map((s) => s.ShardId).sort();
-    expect(shardIds).toEqual(['shard-1', 'shard-2']);
+    expect(shardIds).toEqual(['shard-1', 'shard-2', 'shard-3']);
   });
 });
