@@ -19,7 +19,6 @@ import { Logger } from '..';
 
 export * from './aws';
 
-export type Consistency = 'weak' | 'strong';
 export type Since = 'oldest' | 'latest';
 
 export type CloudProviderOptions = {
