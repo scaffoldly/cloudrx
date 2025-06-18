@@ -152,12 +152,18 @@ export abstract class CloudProvider<TEvent>
         error: (error) => {
           streamAbort.abort(error);
           this.emit('error', error);
+          this.emit('stopped');
         },
         complete: () => {
           streamAbort.abort();
           this.emit('stopped');
         },
       });
+
+    // Listen for abort signals to emit stopped event
+    streamAbort.signal.addEventListener('abort', () => {
+      this.emit('stopped');
+    });
 
     const stop = (reason: unknown): Promise<void> =>
       new Promise<void>((resolve) => {

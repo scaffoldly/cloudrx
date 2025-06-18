@@ -215,6 +215,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     const shardSubscription = this.shards
       .pipe(
         takeUntil(fromEvent(streamAbort.signal, 'abort')),
+        takeUntil(fromEvent(this.signal, 'abort')),
         // Process each shard
         switchMap((shard) => {
           this.logger.debug(
@@ -264,6 +265,11 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return shardIterator.pipe(
       takeUntil(
         fromEvent(signal, 'abort').pipe(
+          tap(() => shardSubscription.unsubscribe())
+        )
+      ),
+      takeUntil(
+        fromEvent(this.signal, 'abort').pipe(
           tap(() => shardSubscription.unsubscribe())
         )
       ),

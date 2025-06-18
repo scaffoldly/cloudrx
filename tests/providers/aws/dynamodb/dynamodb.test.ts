@@ -5,11 +5,6 @@ import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
 import { testId } from '../../../setup';
 import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../../src';
 
-// Helper to access private property
-// function getShardsProperty(provider: unknown): Observable<Shard> | undefined {
-//   return (provider as { _shards?: Observable<Shard> })._shards;
-// }
-
 describe('aws-dynamodb', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController = new AbortController();
@@ -208,6 +203,99 @@ describe('aws-dynamodb', () => {
     for (let i = 0; i < NUM_ITEMS; i++) {
       expect(storedItems[i]).toEqual(testItems[i]);
     }
+  });
+
+  test('global-abort-cascades', async () => {
+    const testAbort = new AbortController();
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: testAbort.signal,
+      logger: console,
+    };
+
+    // Create multiple instances
+    const instance1 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-1`, options)
+    );
+    const instance2 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-2`, options)
+    );
+    const instance3 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-3`, options)
+    );
+
+    const instances = [instance1, instance2, instance3];
+
+    // Start streams for all instances
+    const streamControllers = instances.map((instance) =>
+      instance.stream('latest')
+    );
+
+    // Track stream events for all instances
+    const streamStarted = [false, false, false];
+    const streamStopped = [false, false, false];
+
+    instances.forEach((instance, index) => {
+      instance.on('started', () => {
+        streamStarted[index] = true;
+      });
+
+      instance.on('stopped', () => {
+        streamStopped[index] = true;
+      });
+    });
+
+    // Wait for all streams to start
+    await Promise.all(
+      instances.map(
+        (instance, index) =>
+          new Promise<void>((resolve) => {
+            if (streamStarted[index]) {
+              resolve();
+            } else {
+              instance.once('started', () => resolve());
+            }
+          })
+      )
+    );
+
+    // Verify all streams are started
+    expect(streamStarted).toEqual([true, true, true]);
+    expect(streamStopped).toEqual([false, false, false]);
+
+    // Now abort the global controller
+    testAbort.abort('test abort');
+
+    // Wait for all streams to stop
+    await Promise.all(
+      instances.map(
+        (instance, index) =>
+          new Promise<void>((resolve) => {
+            if (streamStopped[index]) {
+              resolve();
+            } else {
+              instance.once('stopped', () => resolve());
+              // Also set a timeout in case it doesn't stop
+              setTimeout(resolve, 500);
+            }
+          })
+      )
+    );
+
+    // Verify that all streams were stopped
+    expect(streamStopped).toEqual([true, true, true]);
+
+    // Verify all stream controller signals are aborted
+    streamControllers.forEach((controller) => {
+      expect(controller.signal.aborted).toBe(true);
+    });
+
+    // Verify all providers' internal signals are aborted
+    instances.forEach((instance) => {
+      expect(instance['signal'].aborted).toBe(true);
+    });
   });
 
   test('shard-emits-once', async () => {

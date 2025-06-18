@@ -1,3 +1,5 @@
+import { setMaxListeners } from 'events';
+
 export function testId(): string {
   return expect
     .getState()
@@ -5,4 +7,6 @@ export function testId(): string {
     .replace(/--+/g, '-');
 }
 
-export default async function setup(): Promise<void> {}
+export default async function setup(): Promise<void> {
+  setMaxListeners(50);
+}
