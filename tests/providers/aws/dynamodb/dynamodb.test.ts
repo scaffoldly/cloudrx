@@ -3,7 +3,7 @@ import { firstValueFrom, lastValueFrom } from 'rxjs';
 import { DynamoDBProviderOptions } from '../../../../src';
 import DynamoDBProvider from '../../../../src/providers/aws/dynamodb';
 import { DynamoDBLocalContainer } from './local';
-import { _Record } from '@aws-sdk/client-dynamodb-streams';
+import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
 
 function testId(): string {
   return expect
@@ -436,39 +436,67 @@ describe('aws-dynamodb', () => {
   //   });
   // });
 
-  // describe('shard integration tests', () => {
-  //   test('multiple-streams', async () => {
-  //     const options: DynamoDBProviderOptions = {
-  //       client: container.getClient(),
-  //       hashKey: 'hashKey',
-  //       rangeKey: 'rangeKey',
-  //       signal: abort.signal,
-  //       logger: console,
-  //     };
+  test('shard-emits-once', async () => {
+    const mockStreamClient = {
+      send: jest.fn(),
+    };
 
-  //     // Create a provider instance
-  //     const provider = await firstValueFrom(
-  //       DynamoDBProvider.from(testId(), options)
-  //     );
+    const shard1 = {
+      ShardId: 'shard-1',
+      SequenceNumberRange: { StartingSequenceNumber: '1' },
+    };
+    const shard2 = {
+      ShardId: 'shard-2',
+      SequenceNumberRange: { StartingSequenceNumber: '2' },
+    };
 
-  //     // Verify _shards is initially undefined
-  //     const initial = getShardsProperty(provider);
-  //     expect(initial).toBeUndefined();
+    mockStreamClient.send
+      .mockResolvedValueOnce({ StreamDescription: { Shards: [shard1] } })
+      .mockResolvedValueOnce({
+        StreamDescription: { Shards: [shard1, shard2] },
+      })
+      .mockResolvedValueOnce({
+        StreamDescription: { Shards: [shard1, shard2] },
+      })
+      .mockResolvedValue({ StreamDescription: { Shards: [shard1, shard2] } });
 
-  //     // Create two separate streams - this should initialize the shared observable
-  //     const _stream1 = provider.stream('latest');
-  //     const _stream2 = provider.stream('latest');
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: abort.signal,
+      logger: console,
+    };
 
-  //     // Now the _shards property should be defined
-  //     const shards1 = getShardsProperty(provider);
-  //     expect(shards1).toBeDefined();
+    const provider = await firstValueFrom(
+      DynamoDBProvider.from(testId(), options)
+    );
 
-  //     // Create a third stream and check it uses the same observable
-  //     const _stream3 = provider.stream('latest');
-  //     const shards2 = getShardsProperty(provider);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (provider as any)._streamClient = mockStreamClient;
 
-  //     // Verify the observable instance hasn't changed
-  //     expect(shards2).toBe(shards1);
-  //   });
-  // });
+    const emittedShards: Shard[] = [];
+    const subscription = provider.shards.subscribe((shard) => {
+      emittedShards.push(shard);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+
+    subscription.unsubscribe();
+
+    // Should emit exactly 2 shards total
+    expect(emittedShards).toHaveLength(2);
+
+    // Should emit each shard ID exactly once
+    expect(emittedShards.filter((s) => s.ShardId === 'shard-1')).toHaveLength(
+      1
+    );
+    expect(emittedShards.filter((s) => s.ShardId === 'shard-2')).toHaveLength(
+      1
+    );
+
+    // Verify the shard IDs are the expected ones
+    const shardIds = emittedShards.map((s) => s.ShardId).sort();
+    expect(shardIds).toEqual(['shard-1', 'shard-2']);
+  });
 });

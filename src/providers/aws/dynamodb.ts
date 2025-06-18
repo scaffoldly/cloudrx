@@ -33,8 +33,9 @@ import {
   map,
   Observable,
   of,
-  scan,
+  pairwise,
   shareReplay,
+  startWith,
   Subject,
   switchMap,
   takeUntil,
@@ -128,7 +129,7 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.ttlAttribute || 'expires';
   }
 
-  private get shards(): Observable<Shard> {
+  get shards(): Observable<Shard> {
     const { id } = this;
     if (!DynamoDBProvider.shards[id]) {
       DynamoDBProvider.shards[id] = timer(0, 5000).pipe(
@@ -156,13 +157,16 @@ export default class DynamoDBProvider extends CloudProvider<_Record> {
               })
           );
         }),
-        scan((previousShards, currentShards) => {
-          // Only emit shards we haven't seen before
-          return currentShards.filter(
+        startWith([] as Shard[]),
+        pairwise(),
+        map(([previousShards, currentShards]) => {
+          // Find new shards we haven't seen before
+          const newShards = currentShards.filter(
             (shard) =>
               !previousShards.some((prev) => prev.ShardId === shard.ShardId)
           );
-        }, [] as Shard[]),
+          return newShards;
+        }),
         // Only emit when there are new shards
         filter((newShards) => newShards.length > 0),
         // Flatten the array to emit individual shards
