@@ -15,7 +15,7 @@ import {
   RetryError,
   Since,
   Streamed,
-} from '..';
+} from '../base';
 import {
   DynamoDBDocumentClient,
   PutCommand,
@@ -67,7 +67,7 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-export default class DynamoDBProvider extends CloudProvider<_Record> {
+export class DynamoDBProvider extends CloudProvider<_Record> {
   private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   private static shards: Record<string, Observable<Shard>> = {};
 

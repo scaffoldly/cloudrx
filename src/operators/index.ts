@@ -1,2 +1,1 @@
-// Export all operators here
-export {};
+export { persistTo } from './persist-to';

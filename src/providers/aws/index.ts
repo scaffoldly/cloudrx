@@ -1,1 +1,1 @@
-export * from './dynamodb';
+export { DynamoDBProvider, DynamoDBProviderOptions } from './dynamodb';
