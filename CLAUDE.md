@@ -113,3 +113,47 @@ npm run build             # Build for production
 - don't arbitrarily add delays, investigate the race conditions
 - prefer early return pattern for conditionals (if condition, return) rather than large if-else blocks
 - use `unknown` instead of `any` for type safety, never disable ESLint rules
+
+## Recent Learnings & Fixes (2025-06-18)
+
+### Circular Import Resolution
+- **Issue**: "Class extends value undefined is not a constructor or null" error caused by circular imports between `providers/index.ts`, `aws/index.ts`, and `aws/dynamodb.ts`
+- **Solution**: Created separate `providers/base.ts` file containing base classes and types to break circular dependency
+- **Key Files**: 
+  - `src/providers/base.ts` - Contains `CloudProvider` abstract class and related types
+  - `src/providers/index.ts` - Simplified to export from base.ts and AWS providers
+  - `src/providers/aws/dynamodb.ts` - Updated imports to use '../base'
+- **Recommendation**: Always be mindful of import chains in TypeScript. Prefer architectural separation between base classes and implementations.
+
+### AbortSignal Memory Leak Prevention
+- **Issue**: "MaxListenersExceededWarning: Possible EventTarget memory leak detected" with 10+ AbortSignal listeners in tests
+- **Solution**: Added `setMaxListeners(50)` in `tests/setup.ts` to handle legitimate test scenarios with multiple AbortSignal instances
+- **Key Learning**: AbortSignal extends EventTarget (not EventEmitter), so instance-level `setMaxListeners()` is not available
+- **Recommendation**: For test environments with multiple abort controllers, increase global max listeners limit rather than implementing complex cleanup logic
+
+### Signal Propagation Enhancement
+- **Issue**: Global abort controller wasn't properly cascading to individual stream controllers
+- **Solution**: Enhanced `CloudProvider` base class to listen for abort signals and emit 'stopped' events, plus updated DynamoDB provider to listen to both stream and provider abort signals
+- **Key Changes**:
+  - Added `streamAbort.signal.addEventListener('abort', () => this.emit('stopped'))` in `CloudProvider.stream()`
+  - Added dual `takeUntil` operators in DynamoDB `_stream()` method for both stream and provider signals
+- **Test Coverage**: Created comprehensive 'global-abort-cascades' test with multiple provider instances to verify proper signal propagation
+
+### Architecture Insights
+- **Provider Singleton Pattern**: The current singleton implementation in `CloudProvider.from()` works well but doesn't automatically clean up instances. Consider WeakMap for future versions if memory usage becomes a concern.
+- **Signal Hierarchy**: Maintain clear signal hierarchy: Global AbortController → Provider AbortController → Stream AbortController
+- **Event Emission**: Always emit lifecycle events ('started', 'stopped') for proper test verification and debugging
+
+### Future Recommendations
+1. **Circular Import Prevention**: Consider using dependency injection or factory patterns for complex provider hierarchies
+2. **Memory Management**: Monitor memory usage in production; current singleton pattern is acceptable for typical use cases
+3. **Signal Testing**: Always test abort signal propagation with multiple instances to ensure proper cascade behavior
+4. **Error Handling**: Continue distinguishing between `RetryError` and `FatalError` for appropriate error recovery strategies
+
+## Session Learnings and Recommendations
+
+### Objective: Update Memory File with Session Insights
+- **Lesson Learned**: Systematic documentation of development insights is crucial for maintaining project knowledge
+- **Recommendation**: Consistently update this memory file after each significant development milestone or when key architectural decisions are made
+- **Best Practice**: Use this section to capture not just technical details, but also reasoning behind design choices and potential future improvements
+- **Continuous Improvement**: Treat this memory file as a living document that evolves with the project's complexity and maturity
