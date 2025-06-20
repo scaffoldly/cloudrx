@@ -17,8 +17,6 @@ import {
 import { EventEmitter } from 'events';
 import { Logger, NoOpLogger } from '..';
 
-export type Since = 'oldest' | 'latest';
-
 export type CloudProviderOptions = {
   signal: AbortSignal;
   logger?: Logger;
@@ -42,7 +40,7 @@ export type Streamed<T, Marker> = T & {
 export interface ICloudProvider<TEvent> {
   abort(reason?: unknown): void;
   unmarshall<T>(event: TEvent): Streamed<T, unknown>;
-  stream(since: Since): StreamController;
+  stream(): StreamController;
   store<T>(item: T): Observable<T>;
 }
 
@@ -105,7 +103,6 @@ export abstract class CloudProvider<TEvent>
    * @returns Observable of event arrays. Empty arrays will be delayed automatically.
    */
   protected abstract _stream(
-    since: Since,
     streamAbort: AbortController
   ): Observable<TEvent[]>;
 
@@ -127,14 +124,13 @@ export abstract class CloudProvider<TEvent>
 
   /**
    * Start streaming events from this provider.
-   * @param since Whether to start from oldest or latest events
    * @returns Controller to stop the stream
    */
-  public stream(since: Since): StreamController {
+  public stream(): StreamController {
     const streamAbort = new AbortController();
     let isStarted = false;
 
-    const subscription = this._stream(since, streamAbort)
+    const subscription = this._stream(streamAbort)
       .pipe(
         takeUntil(fromEvent(streamAbort.signal, 'abort')),
         // Delay empty arrays to avoid tight polling loops
@@ -192,7 +188,7 @@ export abstract class CloudProvider<TEvent>
     return new Observable<T>((subscriber) => {
       // Start streaming first
       this.logger.debug(`[${this.id}] Starting stream from 'latest'`);
-      const streamController = this.stream('latest');
+      const streamController = this.stream();
 
       // Wait for stream to start, then store item
       const started$ = fromEvent(this, 'started').pipe(

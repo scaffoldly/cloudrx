@@ -13,7 +13,6 @@ import {
   CloudProviderOptions,
   FatalError,
   RetryError,
-  Since,
   Streamed,
 } from '../base';
 import {
@@ -200,14 +199,11 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return DynamoDBProvider.instances[id];
   }
 
-  protected _stream(
-    since: Since,
-    streamAbort: AbortController
-  ): Observable<_Record[]> {
+  protected _stream(streamAbort: AbortController): Observable<_Record[]> {
     const signal = streamAbort.signal;
 
     this.logger.debug(
-      `[${this.id}] Starting _stream with since: ${since}, streamArn: ${this.streamArn}`
+      `[${this.id}] Starting _stream with since: latest, streamArn: ${this.streamArn}`
     );
     const shardIterator = new Subject<string>();
 
@@ -219,7 +215,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         // Process each shard
         switchMap((shard) => {
           this.logger.debug(
-            `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${since === 'latest' ? 'LATEST' : 'TRIM_HORIZON'} at ${Date.now()}`
+            `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: LATEST at ${Date.now()}`
           );
           return from(
             this.streamClient
@@ -227,8 +223,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
                 new GetShardIteratorCommand({
                   StreamArn: this.streamArn,
                   ShardId: shard.ShardId,
-                  ShardIteratorType:
-                    since === 'latest' ? 'LATEST' : 'TRIM_HORIZON',
+                  ShardIteratorType: 'LATEST',
                 }),
                 { abortSignal: signal }
               )

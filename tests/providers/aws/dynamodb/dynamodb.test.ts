@@ -106,7 +106,7 @@ describe('aws-dynamodb', () => {
     const instance = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream = instance.stream('latest');
+    const stream = instance.stream();
 
     const events: _Record[] = [];
     instance.on('event', (event) => {
@@ -140,12 +140,12 @@ describe('aws-dynamodb', () => {
     const instance1 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream1 = instance1.stream('latest');
+    const stream1 = instance1.stream();
 
     const instance2 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream2 = instance2.stream('latest');
+    const stream2 = instance2.stream();
 
     const events1: _Record[] = [];
     instance1.on('event', (event) => {
@@ -229,9 +229,7 @@ describe('aws-dynamodb', () => {
     const instances = [instance1, instance2, instance3];
 
     // Start streams for all instances
-    const streamControllers = instances.map((instance) =>
-      instance.stream('latest')
-    );
+    const streamControllers = instances.map((instance) => instance.stream());
 
     // Track stream events for all instances
     const streamStarted = [false, false, false];
