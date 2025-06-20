@@ -7,7 +7,7 @@ import {
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { testId } from '../setup';
 
-describe('persist-to', () => {
+describe('persistence', () => {
   describe('aws-dynamodb', () => {
     let container: DynamoDBLocalContainer;
     let abort: AbortController = new AbortController();
@@ -60,6 +60,7 @@ describe('persist-to', () => {
 
       subscription1.unsubscribe();
       subscription2.unsubscribe();
+
       expect(events1).toEqual([data1, data2]);
       expect(events2).toEqual([data1, data2]);
     });
