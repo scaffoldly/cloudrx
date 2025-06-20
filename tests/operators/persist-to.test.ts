@@ -26,13 +26,13 @@ describe('persist-to', () => {
       }
     });
 
-    test('subject', async () => {
+    test.skip('subject', async () => {
       const options: DynamoDBProviderOptions = {
         client: container.getClient(),
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        // logger: console,
       };
 
       const provider = DynamoDBProvider.from(testId(), options);

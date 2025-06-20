@@ -29,7 +29,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance1$ = DynamoDBProvider.from(testId(), options);
@@ -49,7 +49,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -65,7 +65,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -81,7 +81,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -100,7 +100,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -134,7 +134,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance1 = await firstValueFrom(
@@ -180,7 +180,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -212,7 +212,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: testAbort.signal,
-      logger: console,
+      // logger: console,
     };
 
     // Create multiple instances
@@ -336,7 +336,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      // logger: console,
       pollInterval: 1000, // 1 second for faster testing
     };
 

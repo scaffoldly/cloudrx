@@ -15,7 +15,7 @@ import {
   timer,
 } from 'rxjs';
 import { EventEmitter } from 'events';
-import { Logger } from '..';
+import { Logger, NoOpLogger } from '..';
 
 export type Since = 'oldest' | 'latest';
 
@@ -60,6 +60,7 @@ export abstract class CloudProvider<TEvent>
   }>
   implements ICloudProvider<TEvent>
 {
+  private _logger: Logger;
   public static readonly aborts: Record<string, AbortController> = {};
 
   protected constructor(
@@ -67,6 +68,8 @@ export abstract class CloudProvider<TEvent>
     protected readonly opts: CloudProviderOptions
   ) {
     super({ captureRejections: true });
+    this._logger = opts.logger || new NoOpLogger();
+
     if (!id || typeof id !== 'string') {
       throw new Error('CloudProvider id must be a non-empty string');
     }
@@ -78,7 +81,7 @@ export abstract class CloudProvider<TEvent>
   }
 
   protected get logger(): Logger {
-    return this.opts.logger || console;
+    return this._logger;
   }
 
   protected get signal(): AbortSignal {
