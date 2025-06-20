@@ -145,14 +145,6 @@ export abstract class CloudProvider<TEvent>
     }
 
     // Create new shared stream
-    return this.createSharedStream();
-  }
-
-  /**
-   * Create a new shared stream with refCount for automatic cleanup.
-   * @returns Controller to stop the stream
-   */
-  private createSharedStream(): StreamController {
     const streamAbort = new AbortController();
     let isStarted = false;
 
