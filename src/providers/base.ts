@@ -139,8 +139,8 @@ export abstract class CloudProvider<TEvent>
     // Return existing stream if it exists
     const existingStream = CloudProvider.streams[this.id];
     if (existingStream) {
-      // Emit streamStart for existing streams using asyncScheduler to ensure consistent timing
-      asyncScheduler.schedule(() => this.emit('streamStart'), 100);
+      // Emit streamStart for existing streams using asyncScheduler with minimal delay
+      asyncScheduler.schedule(() => this.emit('streamStart'), 50);
       return existingStream;
     }
 
@@ -164,13 +164,16 @@ export abstract class CloudProvider<TEvent>
     const sharedObservable = this._stream(controller).pipe(
       takeUntil(fromEvent(this.signal, 'abort')),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
-      // Delay empty arrays to avoid tight polling loops
-      delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
-      tap((events) => {
+      // Emit streamStart immediately on first event batch, then apply delay for empty arrays
+      tap((_events) => {
         if (!isStarted) {
           isStarted = true;
           this.emit('streamStart');
         }
+      }),
+      // Delay empty arrays to avoid tight polling loops
+      delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
+      tap((events) => {
         // Emit individual events
         if (events.length > 0) {
           events.forEach((event) => {
