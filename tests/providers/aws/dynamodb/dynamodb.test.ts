@@ -88,9 +88,8 @@ describe('aws-dynamodb', () => {
       DynamoDBProvider.from(testId(), options)
     );
 
-    const stream = instance.stream();
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance.store(testData, stream));
+    const storedData = await lastValueFrom(instance.store(testData));
 
     expect(storedData).toEqual(testData);
   });
@@ -115,7 +114,7 @@ describe('aws-dynamodb', () => {
     });
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance.store(testData, stream));
+    const storedData = await lastValueFrom(instance.store(testData));
     expect(storedData).toEqual(testData);
 
     await stream.stop();
@@ -159,7 +158,7 @@ describe('aws-dynamodb', () => {
     });
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance1.store(testData, stream1));
+    const storedData = await lastValueFrom(instance1.store(testData));
     expect(storedData).toEqual(testData);
 
     await stream1.stop();
@@ -188,7 +187,6 @@ describe('aws-dynamodb', () => {
       DynamoDBProvider.from(testId(), options)
     );
 
-    const stream = instance.stream();
     const testItems: Data[] = [];
     for (let i = 0; i < NUM_ITEMS; i++) {
       testItems.push({
@@ -198,7 +196,7 @@ describe('aws-dynamodb', () => {
     }
 
     const storedItems = await Promise.all(
-      testItems.map((item) => lastValueFrom(instance.store(item, stream)))
+      testItems.map((item) => lastValueFrom(instance.store(item)))
     );
 
     expect(storedItems.length).toEqual(testItems.length);

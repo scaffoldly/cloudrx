@@ -43,7 +43,7 @@ export interface ICloudProvider<TEvent> {
   abort(reason?: unknown): void;
   unmarshall<T>(event: TEvent): Streamed<T, unknown>;
   stream(): StreamController;
-  store<T>(item: T, streamController: StreamController): Observable<T>;
+  store<T>(item: T, streamController?: StreamController): Observable<T>;
 }
 
 /**
@@ -212,11 +212,14 @@ export abstract class CloudProvider<TEvent>
   /**
    * Store an item and wait for it to appear in the stream.
    * @param item The item to store
-   * @param streamController The stream controller to use for listening
+   * @param streamController Optional stream controller to use for listening. If not provided, creates or reuses existing stream.
    * @returns Observable that emits the item when it appears in the stream
    */
-  public store<T>(item: T, streamController: StreamController): Observable<T> {
+  public store<T>(item: T, streamController?: StreamController): Observable<T> {
     this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
+
+    // Use provided stream controller or create/get one
+    const controller = streamController || this.stream();
 
     return new Observable<T>((subscriber) => {
       // Always wait for stream to be ready before storing
@@ -237,7 +240,7 @@ export abstract class CloudProvider<TEvent>
       ).pipe(
         takeUntil(fromEvent(this, 'streamStop')),
         takeUntil(fromEvent(this, 'streamError')),
-        takeUntil(fromEvent(streamController.signal, 'abort'))
+        takeUntil(fromEvent(controller.signal, 'abort'))
       );
 
       const storeAndWait$ = combineLatest([started$, eventStream$]).pipe(
