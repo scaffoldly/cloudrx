@@ -139,8 +139,15 @@ export abstract class CloudProvider<TEvent>
     // Return existing stream if it exists
     const existingStream = CloudProvider.streams[this.id];
     if (existingStream) {
-      // Emit streamStart for existing streams using asyncScheduler with minimal delay
-      asyncScheduler.schedule(() => this.emit('streamStart'), 50);
+      // We need to ensure listeners are set up before emitting the streamStart event
+      // Use Promise.resolve().then() to schedule the emission in the microtask queue
+      // This provides a more deterministic approach than arbitrary timeouts
+      // while ensuring listeners have a chance to attach
+      Promise.resolve().then(() => {
+        // The additional timeout ensures that microtasks from the caller's execution context
+        // have completed before we emit the streamStart event
+        setTimeout(() => this.emit('streamStart'), 10);
+      });
       return existingStream;
     }
 
