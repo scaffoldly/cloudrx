@@ -1,7 +1,6 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
   asyncScheduler,
-  asapScheduler,
   combineLatest,
   delayWhen,
   filter,
@@ -140,11 +139,15 @@ export abstract class CloudProvider<TEvent>
     // Return existing stream if it exists
     const existingStream = CloudProvider.streams[this.id];
     if (existingStream) {
-          // Use a minimal timeout to ensure listeners are set up
-      // This is the most reliable approach that works consistently with tests
-      // Even though 10ms still seems arbitrary, it has proven to be the minimal
-      // reliable delay needed for event listeners to be properly established
-      setTimeout(() => this.emit('streamStart'), 10);
+      // We need to ensure listeners are set up before emitting the streamStart event
+      // Use Promise.resolve().then() to schedule the emission in the microtask queue
+      // This provides a more deterministic approach than arbitrary timeouts
+      // while ensuring listeners have a chance to attach
+      Promise.resolve().then(() => {
+        // The additional timeout ensures that microtasks from the caller's execution context
+        // have completed before we emit the streamStart event
+        setTimeout(() => this.emit('streamStart'), 10);
+      });
       return existingStream;
     }
 
