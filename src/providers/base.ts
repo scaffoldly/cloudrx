@@ -1,8 +1,6 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
   asyncScheduler,
-  asapScheduler,
-  queueScheduler,
   combineLatest,
   delayWhen,
   filter,
@@ -141,8 +139,8 @@ export abstract class CloudProvider<TEvent>
     // Return existing stream if it exists
     const existingStream = CloudProvider.streams[this.id];
     if (existingStream) {
-      // Try using Promise.resolve() instead of asyncScheduler with delay
-      Promise.resolve().then(() => this.emit('streamStart'));
+      // Use a slightly longer timeout (10ms) to ensure listeners are set up
+      setTimeout(() => this.emit('streamStart'), 10);
       return existingStream;
     }
 
