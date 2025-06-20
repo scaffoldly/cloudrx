@@ -13,6 +13,7 @@ import {
   CloudProviderOptions,
   FatalError,
   RetryError,
+  StreamController,
   Streamed,
 } from '../base';
 import {
@@ -127,61 +128,62 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.ttlAttribute || 'expires';
   }
 
-  get shards(): Observable<Shard> {
+  public getShards(signal: AbortSignal): Observable<Shard> {
     const { id } = this;
-    if (!DynamoDBProvider.shards[id]) {
-      DynamoDBProvider.shards[id] = timer(
-        0,
-        this.opts.pollInterval || 5000
-      ).pipe(
-        takeUntil(fromEvent(this.signal, 'abort')),
-        switchMap(() => {
-          this.logger.debug(`[${this.id}] Attempting to describe stream...`);
-          return from(
-            this.streamClient
-              .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-                abortSignal: this.signal,
-              })
-              .then((response) => {
-                this.logger.debug(
-                  `[${this.id}] Stream description successful, shards:`,
-                  response.StreamDescription?.Shards?.length || 0
-                );
-                return response.StreamDescription?.Shards || [];
-              })
-              .catch((error) => {
-                this.logger.error(
-                  `[${this.id}] Failed to describe stream:`,
-                  error
-                );
-                return []; // Return empty array on error to keep polling
-              })
-          );
-        }),
-        // Flatten the array to emit individual shards
-        switchMap((shards) => from(shards)),
-        // Track all seen shard IDs and only emit new ones
-        scan(
-          (
-            acc: { seenShardIds: Set<string>; newShard: Shard | null },
-            shard: Shard
-          ) => {
-            if (shard.ShardId && !acc.seenShardIds.has(shard.ShardId)) {
-              acc.seenShardIds.add(shard.ShardId);
-              return { seenShardIds: acc.seenShardIds, newShard: shard };
-            }
-            return { seenShardIds: acc.seenShardIds, newShard: null };
-          },
-          { seenShardIds: new Set<string>(), newShard: null }
-        ),
-        // Only emit when we have a new shard
-        filter(({ newShard }) => newShard !== null),
-        // Extract the new shard
-        map(({ newShard }) => newShard!),
-        // Share the observable with all subscribers
-        shareReplay(1)
-      );
+
+    if (DynamoDBProvider.shards[id]) {
+      this.logger.debug(`[${this.id}] Returning existing shard observable`);
+      return DynamoDBProvider.shards[id];
     }
+
+    DynamoDBProvider.shards[id] = timer(0, this.opts.pollInterval || 5000).pipe(
+      takeUntil(fromEvent(signal, 'abort')),
+      switchMap(() => {
+        this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+        return from(
+          this.streamClient
+            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
+              abortSignal: signal,
+            })
+            .then((response) => {
+              this.logger.debug(
+                `[${this.id}] Stream description successful, shards:`,
+                response.StreamDescription?.Shards?.length || 0
+              );
+              return response.StreamDescription?.Shards || [];
+            })
+            .catch((error) => {
+              this.logger.error(
+                `[${this.id}] Failed to describe stream:`,
+                error
+              );
+              return []; // Return empty array on error to keep polling
+            })
+        );
+      }),
+      // Flatten the array to emit individual shards
+      switchMap((shards) => from(shards)),
+      // Track all seen shard IDs and only emit new ones
+      scan(
+        (
+          acc: { seenShardIds: Set<string>; newShard: Shard | null },
+          shard: Shard
+        ) => {
+          if (shard.ShardId && !acc.seenShardIds.has(shard.ShardId)) {
+            acc.seenShardIds.add(shard.ShardId);
+            return { seenShardIds: acc.seenShardIds, newShard: shard };
+          }
+          return { seenShardIds: acc.seenShardIds, newShard: null };
+        },
+        { seenShardIds: new Set<string>(), newShard: null }
+      ),
+      // Only emit when we have a new shard
+      filter(({ newShard }) => newShard !== null),
+      // Extract the new shard
+      map(({ newShard }) => newShard!),
+      // Share the observable with all subscribers
+      shareReplay(1)
+    );
 
     return DynamoDBProvider.shards[id];
   }
@@ -192,15 +194,15 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
   ): Observable<DynamoDBProvider> {
     if (!DynamoDBProvider.instances[id]) {
       DynamoDBProvider.instances[id] = new DynamoDBProvider(id, options)
-        .init()
+        .init(options.signal)
         .pipe(shareReplay(1));
     }
 
     return DynamoDBProvider.instances[id];
   }
 
-  protected _stream(streamAbort: AbortController): Observable<_Record[]> {
-    const signal = streamAbort.signal;
+  protected _stream(controller: StreamController): Observable<_Record[]> {
+    const signal = controller.signal;
 
     this.logger.debug(
       `[${this.id}] Starting _stream with since: latest, streamArn: ${this.streamArn}`
@@ -208,10 +210,9 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     const shardIterator = new Subject<string>();
 
     // Create a local subscription to the shared shard observable
-    const shardSubscription = this.shards
+    const shardSubscription = this.getShards(signal)
       .pipe(
-        takeUntil(fromEvent(streamAbort.signal, 'abort')),
-        takeUntil(fromEvent(this.signal, 'abort')),
+        takeUntil(fromEvent(signal, 'abort')),
         // Process each shard
         switchMap((shard) => {
           this.logger.debug(
@@ -263,11 +264,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
           tap(() => shardSubscription.unsubscribe())
         )
       ),
-      takeUntil(
-        fromEvent(this.signal, 'abort').pipe(
-          tap(() => shardSubscription.unsubscribe())
-        )
-      ),
       concatMap((position) => {
         this.logger.debug(`[${this.id}] Getting records with iterator`);
         return from(
@@ -307,7 +303,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     );
   }
 
-  protected init(): Observable<this> {
+  protected init(signal: AbortSignal): Observable<this> {
     this.logger.info(`[${this.id}] Initializing DynamoDB provider...`);
     const describe$ = defer(() => {
       this.logger.debug(`[${this.id}] Describing existing table and TTL...`);
@@ -315,13 +311,13 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         this.client.send(
           new DescribeTableCommand({ TableName: this.tableName }),
           {
-            abortSignal: this.signal,
+            abortSignal: signal,
           }
         ),
         this.client.send(
           new DescribeTimeToLiveCommand({ TableName: this.tableName }),
           {
-            abortSignal: this.signal,
+            abortSignal: signal,
           }
         ),
       ]).pipe(
@@ -358,7 +354,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
             },
           }),
           {
-            abortSignal: this.signal,
+            abortSignal: signal,
           }
         ),
         this.client.send(
@@ -370,7 +366,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
             },
           }),
           {
-            abortSignal: this.signal,
+            abortSignal: signal,
           }
         ),
       ]).pipe(
@@ -392,7 +388,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       table: TableDescription;
       ttl: TimeToLiveDescription;
     } => {
-      if (this.signal.aborted) {
+      if (signal.aborted) {
         throw new FatalError('Aborted');
       }
 
@@ -525,7 +521,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       ttl: TimeToLiveDescription;
     }> =>
       timer(delay).pipe(
-        takeUntil(fromEvent(this.signal, 'abort')),
+        takeUntil(fromEvent(signal, 'abort')),
         switchMap(() =>
           describe$.pipe(switchMap(({ table, ttl }) => of(assert(table, ttl))))
         ),
@@ -645,8 +641,8 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         new PutCommand({
           TableName: this.tableName,
           Item: record,
-        }),
-        { abortSignal: this.signal }
+        })
+        // { abortSignal: this.signal }
       )
     ).pipe(
       map(() => {

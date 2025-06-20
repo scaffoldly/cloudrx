@@ -9,6 +9,7 @@ import {
   map,
   Observable,
   of,
+  Subscription,
   switchMap,
   takeUntil,
   tap,
@@ -51,15 +52,16 @@ export interface ICloudProvider<TEvent> {
  */
 export abstract class CloudProvider<TEvent>
   extends EventEmitter<{
-    event: [TEvent];
-    error: [Error];
-    started: [];
-    stopped: [];
+    streamEvent: [TEvent];
+    streamStart: [];
+    streamStop: [];
+    streamError: [Error];
   }>
   implements ICloudProvider<TEvent>
 {
   private _logger: Logger;
   public static readonly aborts: Record<string, AbortController> = {};
+  // private static readonly streams: Record<string, StreamController> = {};
 
   protected constructor(
     protected readonly id: string,
@@ -82,7 +84,7 @@ export abstract class CloudProvider<TEvent>
     return this._logger;
   }
 
-  protected get signal(): AbortSignal {
+  private get signal(): AbortSignal {
     return CloudProvider.aborts[this.id]!.signal;
   }
 
@@ -94,16 +96,16 @@ export abstract class CloudProvider<TEvent>
    * Initialize the provider. Called once before streaming begins.
    * @returns Observable that emits this provider when ready
    */
-  protected abstract init(): Observable<this>;
+  protected abstract init(signal: AbortSignal): Observable<this>;
 
   /**
    * Stream events from the provider.
    * @param since Whether to start from oldest or latest events
-   * @param signal AbortSignal to stop streaming
+   * @param controller The controller to manage the stream
    * @returns Observable of event arrays. Empty arrays will be delayed automatically.
    */
   protected abstract _stream(
-    streamAbort: AbortController
+    controller: StreamController
   ): Observable<TEvent[]>;
 
   /**
@@ -128,17 +130,31 @@ export abstract class CloudProvider<TEvent>
    */
   public stream(): StreamController {
     const streamAbort = new AbortController();
+    let subscription: Subscription | undefined = undefined;
     let isStarted = false;
 
-    const subscription = this._stream(streamAbort)
+    const controller: StreamController = {
+      signal: streamAbort.signal,
+      stop: (reason?: unknown): Promise<void> => {
+        return new Promise<void>((resolve) => {
+          if (subscription) {
+            subscription.unsubscribe();
+          }
+          streamAbort.abort(reason);
+          resolve();
+        });
+      },
+    };
+
+    subscription = this._stream(controller)
       .pipe(
-        takeUntil(fromEvent(streamAbort.signal, 'abort')),
+        takeUntil(fromEvent(this.signal, 'abort')),
         // Delay empty arrays to avoid tight polling loops
         delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
         tap(() => {
           if (!isStarted) {
             isStarted = true;
-            this.emit('started');
+            this.emit('streamStart');
           }
         }),
         filter((events) => events.length > 0),
@@ -146,35 +162,21 @@ export abstract class CloudProvider<TEvent>
       )
       .subscribe({
         next: (event) => {
-          this.emit('event', event);
+          this.emit('streamEvent', event);
         },
         error: (error) => {
+          isStarted = false;
           streamAbort.abort(error);
-          this.emit('error', error);
-          this.emit('stopped');
+          this.emit('streamError', error);
         },
         complete: () => {
+          isStarted = false;
           streamAbort.abort();
-          this.emit('stopped');
+          this.emit('streamStop');
         },
       });
 
-    // Listen for abort signals to emit stopped event
-    streamAbort.signal.addEventListener('abort', () => {
-      this.emit('stopped');
-    });
-
-    const stop = (reason: unknown): Promise<void> =>
-      new Promise<void>((resolve) => {
-        streamAbort.abort(reason);
-        subscription.unsubscribe();
-        resolve();
-      });
-
-    return {
-      signal: streamAbort.signal,
-      stop,
-    };
+    return controller;
   }
 
   /**
@@ -187,11 +189,13 @@ export abstract class CloudProvider<TEvent>
 
     return new Observable<T>((subscriber) => {
       // Start streaming first
-      this.logger.debug(`[${this.id}] Starting stream from 'latest'`);
       const streamController = this.stream();
 
-      // Wait for stream to start, then store item
-      const started$ = fromEvent(this, 'started').pipe(
+      // Wait for event 'streamStart' to ensure the stream is ready
+      this.logger.debug(
+        `[${this.id}] Waiting for stream to start before storing item`
+      );
+      const started$ = fromEvent(this, 'streamStart').pipe(
         first(),
         tap(() =>
           this.logger.debug(`[${this.id}] Stream started, now storing item`)
@@ -200,10 +204,10 @@ export abstract class CloudProvider<TEvent>
       );
 
       const eventStream$ = (
-        fromEvent(this, 'event') as Observable<TEvent>
+        fromEvent(this, 'streamEvent') as Observable<TEvent>
       ).pipe(
-        takeUntil(fromEvent(this, 'error')), // Cancel on stream error
-        takeUntil(fromEvent(this, 'complete')) // Cancel if stream completes
+        takeUntil(fromEvent(this, 'streamStop')),
+        takeUntil(fromEvent(this, 'streamError'))
       );
 
       const storeAndWait$ = combineLatest([started$, eventStream$]).pipe(

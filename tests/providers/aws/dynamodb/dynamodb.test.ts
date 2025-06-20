@@ -109,7 +109,7 @@ describe('aws-dynamodb', () => {
     const stream = instance.stream();
 
     const events: _Record[] = [];
-    instance.on('event', (event) => {
+    instance.on('streamEvent', (event) => {
       events.push(event);
     });
 
@@ -148,12 +148,12 @@ describe('aws-dynamodb', () => {
     const stream2 = instance2.stream();
 
     const events1: _Record[] = [];
-    instance1.on('event', (event) => {
+    instance1.on('streamEvent', (event) => {
       events1.push(event);
     });
 
     const events2: _Record[] = [];
-    instance2.on('event', (event) => {
+    instance2.on('streamEvent', (event) => {
       events2.push(event);
     });
 
@@ -236,11 +236,11 @@ describe('aws-dynamodb', () => {
     const streamStopped = [false, false, false];
 
     instances.forEach((instance, index) => {
-      instance.on('started', () => {
+      instance.on('streamStart', () => {
         streamStarted[index] = true;
       });
 
-      instance.on('stopped', () => {
+      instance.on('streamStop', () => {
         streamStopped[index] = true;
       });
     });
@@ -253,7 +253,7 @@ describe('aws-dynamodb', () => {
             if (streamStarted[index]) {
               resolve();
             } else {
-              instance.once('started', () => resolve());
+              instance.once('streamStart', () => resolve());
             }
           })
       )
@@ -274,7 +274,7 @@ describe('aws-dynamodb', () => {
             if (streamStopped[index]) {
               resolve();
             } else {
-              instance.once('stopped', () => resolve());
+              instance.once('streamStop', () => resolve());
               // Also set a timeout in case it doesn't stop
               setTimeout(resolve, 500);
             }
@@ -346,7 +346,7 @@ describe('aws-dynamodb', () => {
     (provider as any)._streamClient = mockStreamClient;
 
     const emittedShards: Shard[] = [];
-    const subscription = provider.shards.subscribe((shard) => {
+    const subscription = provider.getShards(abort.signal).subscribe((shard) => {
       emittedShards.push(shard);
     });
 
