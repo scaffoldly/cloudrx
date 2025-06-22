@@ -118,6 +118,14 @@ export abstract class CloudProvider<TEvent>
       }
       store.unsubscribe();
     });
+
+    // When provider aborts, abort any active streams
+    CloudProvider.aborts[id].signal.addEventListener('abort', () => {
+      if (CloudProvider.streams[id]) {
+        CloudProvider.streams[id].stop(new Error('Provider aborted'));
+        delete CloudProvider.streams[id];
+      }
+    });
   }
 
   protected get logger(): Logger {
@@ -189,6 +197,7 @@ export abstract class CloudProvider<TEvent>
 
     this.logger.debug(`[${this.id}] Creating new stream controller`);
     const streamAbort = new AbortController();
+
     let started = false;
 
     controller = CloudProvider.streams[this.id] = new StreamController(
@@ -206,7 +215,6 @@ export abstract class CloudProvider<TEvent>
 
     const shared = this._stream(controller).pipe(
       observeOn(asyncScheduler),
-      takeUntil(fromEvent(this.signal, 'abort')),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
       tap((events) => {
         if (!started) {

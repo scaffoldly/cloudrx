@@ -10,7 +10,7 @@ import { testId } from '../setup';
 describe('persistence', () => {
   describe('aws-dynamodb', () => {
     let container: DynamoDBLocalContainer;
-    let abort: AbortController = new AbortController();
+    let abort: AbortController;
 
     type Data = { message: string; timestamp: number };
 
@@ -19,8 +19,19 @@ describe('persistence', () => {
       await container.start();
     });
 
+    beforeEach(() => {
+      // Fresh AbortController for each test - ensures test isolation
+      abort = new AbortController();
+    });
+
+    afterEach(() => {
+      // Clean up after each test
+      if (!abort.signal.aborted) {
+        abort.abort();
+      }
+    });
+
     afterAll(async () => {
-      abort.abort();
       if (container) {
         await container.stop();
       }

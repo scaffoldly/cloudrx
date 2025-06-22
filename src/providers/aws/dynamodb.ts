@@ -27,7 +27,6 @@ import {
   concatMap,
   defer,
   filter,
-  first,
   forkJoin,
   from,
   fromEvent,
@@ -143,9 +142,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         this.logger.debug(`[${this.id}] Attempting to describe stream...`);
         return from(
           this.streamClient
-            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }), {
-              abortSignal: signal,
-            })
+            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }))
             .then((response) => {
               return response.StreamDescription?.Shards || [];
             })
@@ -209,7 +206,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     // Create a local subscription to the shared shard observable
     const shardSubscription = this.getShards(signal)
       .pipe(
-        takeUntil(fromEvent(signal, 'abort')),
         // Process each shard
         switchMap((shard) => {
           this.logger.debug(
@@ -222,8 +218,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
                   StreamArn: this.streamArn,
                   ShardId: shard.ShardId,
                   ShardIteratorType: 'LATEST',
-                }),
-                { abortSignal: signal }
+                })
               )
               .then((response) => {
                 if (!response.ShardIterator) {
@@ -261,9 +256,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       concatMap((position) => {
         return from(
           this.streamClient
-            .send(new GetRecordsCommand({ ShardIterator: position }), {
-              abortSignal: signal,
-            })
+            .send(new GetRecordsCommand({ ShardIterator: position }))
             .then((response) => {
               const nextShardIterator = response.NextShardIterator;
               const records = response.Records || [];
@@ -298,16 +291,10 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       this.logger.debug(`[${this.id}] Describing existing table and TTL...`);
       return forkJoin([
         this.client.send(
-          new DescribeTableCommand({ TableName: this.tableName }),
-          {
-            abortSignal: signal,
-          }
+          new DescribeTableCommand({ TableName: this.tableName })
         ),
         this.client.send(
-          new DescribeTimeToLiveCommand({ TableName: this.tableName }),
-          {
-            abortSignal: signal,
-          }
+          new DescribeTimeToLiveCommand({ TableName: this.tableName })
         ),
       ]).pipe(
         map(([table, ttl]) => {
@@ -341,10 +328,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               StreamEnabled: true,
               StreamViewType: 'NEW_AND_OLD_IMAGES',
             },
-          }),
-          {
-            abortSignal: signal,
-          }
+          })
         ),
         this.client.send(
           new UpdateTimeToLiveCommand({
@@ -353,10 +337,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               AttributeName: this.ttlAttribute,
               Enabled: true,
             },
-          }),
-          {
-            abortSignal: signal,
-          }
+          })
         ),
       ]).pipe(
         map(([table, ttl]) => {

@@ -7,7 +7,7 @@ import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../../src';
 
 describe('aws-dynamodb', () => {
   let container: DynamoDBLocalContainer;
-  let abort: AbortController = new AbortController();
+  let abort: AbortController;
 
   type Data = { message: string; timestamp: number };
 
@@ -16,8 +16,19 @@ describe('aws-dynamodb', () => {
     await container.start();
   });
 
+  beforeEach(() => {
+    // Fresh AbortController for each test - ensures test isolation
+    abort = new AbortController();
+  });
+
+  afterEach(() => {
+    // Clean up after each test
+    if (!abort.signal.aborted) {
+      abort.abort();
+    }
+  });
+
   afterAll(async () => {
-    abort.abort();
     if (container) {
       await container.stop();
     }
@@ -210,98 +221,98 @@ describe('aws-dynamodb', () => {
     }
   });
 
-  // test('global-abort-cascades', async () => {
-  //   const testAbort = new AbortController();
-  //   const options: DynamoDBProviderOptions = {
-  //     client: container.getClient(),
-  //     hashKey: 'hashKey',
-  //     rangeKey: 'rangeKey',
-  //     signal: testAbort.signal,
-  //     // logger: console,
-  //   };
+  test('global-abort-cascades', async () => {
+    const testAbort = new AbortController();
+    const options: DynamoDBProviderOptions = {
+      client: container.getClient(),
+      hashKey: 'hashKey',
+      rangeKey: 'rangeKey',
+      signal: testAbort.signal,
+      // logger: console,
+    };
 
-  //   // Create multiple instances
-  //   const instance1 = await firstValueFrom(
-  //     DynamoDBProvider.from(`${testId()}-1`, options)
-  //   );
-  //   const instance2 = await firstValueFrom(
-  //     DynamoDBProvider.from(`${testId()}-2`, options)
-  //   );
-  //   const instance3 = await firstValueFrom(
-  //     DynamoDBProvider.from(`${testId()}-3`, options)
-  //   );
+    // Create multiple instances
+    const instance1 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-1`, options)
+    );
+    const instance2 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-2`, options)
+    );
+    const instance3 = await firstValueFrom(
+      DynamoDBProvider.from(`${testId()}-3`, options)
+    );
 
-  //   const instances = [instance1, instance2, instance3];
+    const instances = [instance1, instance2, instance3];
 
-  //   // Start streams for all instances
-  //   const streamControllers = await Promise.all(
-  //     instances.map((instance) => firstValueFrom(instance.stream()))
-  //   );
+    // Start streams for all instances
+    const streamControllers = await Promise.all(
+      instances.map((instance) => firstValueFrom(instance.stream()))
+    );
 
-  //   // Track stream events for all instances
-  //   const streamStarted = [false, false, false];
-  //   const streamStopped = [false, false, false];
+    // Track stream events for all instances
+    const streamStarted = [false, false, false];
+    const streamStopped = [false, false, false];
 
-  //   instances.forEach((instance, index) => {
-  //     instance.on('streamStart', () => {
-  //       streamStarted[index] = true;
-  //     });
+    streamControllers.forEach((controller, index) => {
+      controller.on('start', () => {
+        streamStarted[index] = true;
+      });
 
-  //     instance.on('streamStop', () => {
-  //       streamStopped[index] = true;
-  //     });
-  //   });
+      controller.on('stop', () => {
+        streamStopped[index] = true;
+      });
+    });
 
-  //   // Wait for all streams to start
-  //   await Promise.all(
-  //     instances.map(
-  //       (instance, index) =>
-  //         new Promise<void>((resolve) => {
-  //           if (streamStarted[index]) {
-  //             resolve();
-  //           } else {
-  //             instance.once('streamStart', () => resolve());
-  //           }
-  //         })
-  //     )
-  //   );
+    // Wait for all streams to start
+    await Promise.all(
+      streamControllers.map(
+        (controller, index) =>
+          new Promise<void>((resolve) => {
+            if (streamStarted[index]) {
+              resolve();
+            } else {
+              controller.once('start', () => resolve());
+            }
+          })
+      )
+    );
 
-  //   // Verify all streams are started
-  //   expect(streamStarted).toEqual([true, true, true]);
-  //   expect(streamStopped).toEqual([false, false, false]);
+    // Verify all streams are started
+    expect(streamStarted).toEqual([true, true, true]);
+    expect(streamStopped).toEqual([false, false, false]);
 
-  //   // Now abort the global controller
-  //   testAbort.abort('test abort');
+    // Now abort the global controller
+    testAbort.abort('test abort');
 
-  //   // Wait for all streams to stop
-  //   await Promise.all(
-  //     instances.map(
-  //       (instance, index) =>
-  //         new Promise<void>((resolve) => {
-  //           if (streamStopped[index]) {
-  //             resolve();
-  //           } else {
-  //             instance.once('streamStop', () => resolve());
-  //             // Also set a timeout in case it doesn't stop
-  //             setTimeout(resolve, 500);
-  //           }
-  //         })
-  //     )
-  //   );
+    // Wait for all streams to stop
+    await Promise.all(
+      streamControllers.map(
+        (controller, index) =>
+          new Promise<void>((resolve) => {
+            if (streamStopped[index]) {
+              resolve();
+            } else {
+              controller.once('stop', () => resolve());
+              // Also set a timeout in case it doesn't stop
+              setTimeout(resolve, 500);
+            }
+          })
+      )
+    );
 
-  //   // Verify that all streams were stopped
-  //   expect(streamStopped).toEqual([true, true, true]);
+    // Verify that all streams were stopped
+    expect(streamStopped).toEqual([true, true, true]);
 
-  //   // Verify all stream controller signals are aborted
-  //   streamControllers.forEach((controller) => {
-  //     expect(controller.signal.aborted).toBe(true);
-  //   });
+    // Verify all stream controller signals are aborted
+    streamControllers.forEach((controller) => {
+      expect(controller.signal.aborted).toBe(true);
+    });
 
-  //   // Verify all providers' internal signals are aborted
-  //   instances.forEach((instance) => {
-  //     expect(instance['signal'].aborted).toBe(true);
-  //   });
-  // });
+    // Verify all providers' internal signals are aborted
+    instances.forEach((instance) => {
+      expect(instance['signal'].aborted).toBe(true);
+    });
+  });
 
   test('shard-emits-once', async () => {
     const mockStreamClient = {
