@@ -19,7 +19,7 @@ export const persistWith = <T>(
 export const persistTo = <T>(): OperatorFunction<Persistable<T>, T> => {
   return (persistable: Observable<Persistable<T>>): Observable<T> => {
     return persistable.pipe(
-      switchMap((persistable) => {
+      mergeMap((persistable) => {
         const provider$ = persistable.provider.pipe(first());
 
         const stream$ =
@@ -43,14 +43,15 @@ export const persistFrom = <T>(
   all?: boolean
 ): OperatorFunction<T, Persistable<T>> => {
   return (source: Observable<T>): Observable<Persistable<T>> => {
-    const provider$ = provider.pipe(first());
-    const stream$ = provider$.pipe(
-      switchMap((providerInstance) => providerInstance.stream(all))
-    );
-
     return source.pipe(
-      switchMap((value) => {
+      mergeMap((value) => {
         return new Observable<Persistable<T>>((subscriber) => {
+          // Create a fresh stream for each persistable to avoid sharing
+          const provider$ = provider.pipe(first());
+          const stream$ = provider$.pipe(
+            switchMap((providerInstance) => providerInstance.stream(all))
+          );
+
           subscriber.next({
             provider,
             source: new Observable<T>((sourceSubscriber) => {
