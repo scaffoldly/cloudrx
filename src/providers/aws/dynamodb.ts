@@ -282,42 +282,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
                   },
                   !records.length ? 1000 : 0
                 );
-              } else {
-                this.logger.debug(
-                  `[${this.id}] No next iterator, refreshing after delay`
-                );
-                // Continue streaming by refreshing the shard iterator
-                setTimeout(() => {
-                  // Get a fresh shard and iterator
-                  (this.getShards(signal) as Observable<Shard>)
-                    .pipe(first())
-                    .subscribe({
-                      next: (shard: Shard) => {
-                        from(
-                          this.streamClient.send(
-                            new GetShardIteratorCommand({
-                              StreamArn: this.streamArn,
-                              ShardId: shard.ShardId,
-                              ShardIteratorType: 'LATEST',
-                            }),
-                            { abortSignal: signal }
-                          )
-                        ).subscribe({
-                          next: (response) => {
-                            if (response.ShardIterator) {
-                              shardIterator.next(response.ShardIterator);
-                            }
-                          },
-                          error: (error) => {
-                            this.logger.error(
-                              `[${this.id}] Failed to refresh iterator:`,
-                              error
-                            );
-                          },
-                        });
-                      },
-                    });
-                }, 2000);
               }
 
               return records;

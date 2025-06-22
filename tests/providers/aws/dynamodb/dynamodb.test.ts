@@ -178,7 +178,7 @@ describe('aws-dynamodb', () => {
   });
 
   test('stores-items', async () => {
-    const NUM_ITEMS = 5;
+    const NUM_ITEMS = 10;
 
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
@@ -205,8 +205,6 @@ describe('aws-dynamodb', () => {
     );
 
     expect(storedItems.length).toEqual(testItems.length);
-    console.log('!!! Stored items:', storedItems);
-    console.log('!!! Test items:', testItems);
     for (let i = 0; i < NUM_ITEMS; i++) {
       expect(storedItems[i]).toEqual(testItems[i]);
     }
