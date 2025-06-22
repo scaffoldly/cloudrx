@@ -1,16 +1,11 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
   asyncScheduler,
-  combineLatest,
-  filter,
-  from,
   fromEvent,
-  map,
   Observable,
   observeOn,
   share,
   switchMap,
-  take,
   takeUntil,
   tap,
 } from 'rxjs';
@@ -160,9 +155,12 @@ export abstract class CloudProvider<TEvent>
       return new Observable<StreamController>((subscriber) => {
         subscriber.next(controller!);
         subscriber.complete();
+        // For existing streams, emit start event after a microtask to indicate readiness
         Promise.resolve().then(() => {
-          // Emit start event immediately if stream already exists
-          setTimeout(() => controller!.emit('start'), 10);
+          this.logger.debug(
+            `[${this.id}] Emitting start event for existing stream`
+          );
+          setTimeout(() => controller!.emit('start'), 100);
         });
       });
     }
@@ -189,16 +187,35 @@ export abstract class CloudProvider<TEvent>
       takeUntil(fromEvent(this.signal, 'abort')),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
       tap((events) => {
+        this.logger.debug(
+          `[${this.id}] Processing ${events.length} events from _stream`
+        );
+
         if (!started) {
           started = true;
-          this.logger.debug(`[${this.id}] Stream started`);
-          controller.emit('start');
+          this.logger.debug(
+            `[${this.id}] Stream first batch processed, scheduling start event`
+          );
+          // Emit start event after a microtask to ensure stream is positioned
+          // This allows the underlying implementation to establish its position
+          Promise.resolve().then(() => {
+            this.logger.debug(
+              `[${this.id}] Emitting start event for existing stream`
+            );
+            setTimeout(() => controller!.emit('start'), 100);
+          });
         }
+
         if (events.length > 0) {
-          this.logger.debug(`[${this.id}] Streamed ${events.length} events`);
-          events.forEach((event) => {
+          this.logger.debug(
+            `[${this.id}] Emitting ${events.length} events to listeners`
+          );
+          events.forEach((event, i) => {
+            this.logger.debug(`[${this.id}] Emitting event ${i}:`, event);
             this.emit('event', event);
           });
+        } else {
+          this.logger.debug(`[${this.id}] No events to emit (empty array)`);
         }
       }),
       share({
@@ -245,36 +262,64 @@ export abstract class CloudProvider<TEvent>
 
     return controller$.pipe(
       switchMap((controller) => {
-        const matcher$ = fromEvent(controller, 'start').pipe(
-          tap(() => {
-            this.logger.debug(`[${this.id}] Stream started, now storing item`);
-          }),
-          take(1),
-          switchMap(() => from(this._store(item)))
+        this.logger.debug(
+          `[${this.id}] Got stream controller, waiting for start event`
         );
 
-        const streamed$ = (fromEvent(this, 'event') as Observable<TEvent>).pipe(
-          tap((event) => {
-            this.logger.debug(`[${this.id}] Received event:`, event);
-          }),
-          takeUntil(fromEvent(controller.signal, 'abort')),
-          takeUntil(fromEvent(controller, 'stop')),
-          takeUntil(fromEvent(controller, 'error'))
-        );
+        return new Observable<T>((subscriber) => {
+          let matcher: (event: TEvent) => boolean;
+          let isCompleted = false;
+          let eventHandler: (event: TEvent) => void;
 
-        return combineLatest([matcher$, streamed$]).pipe(
-          filter(([matcher, event]) => {
-            return matcher(event);
-          }),
-          take(1),
-          map(([, event]) => this.unmarshall(event) as Streamed<T, unknown>),
-          map((streamed) => {
-            const marker = streamed.__marker__;
-            this.logger.debug(`[${this.id}][${marker}] Item stored:`, item);
-            delete streamed.__marker__;
-            return streamed as T;
-          })
-        );
+          const cleanup = (): void => {
+            if (eventHandler) {
+              this.off('event', eventHandler);
+            }
+          };
+
+          eventHandler = (event: TEvent): void => {
+            if (isCompleted || !matcher) return;
+
+            if (matcher(event)) {
+              isCompleted = true;
+              cleanup();
+
+              const streamed = this.unmarshall(event) as Streamed<T, unknown>;
+              const marker = streamed.__marker__;
+              this.logger.debug(
+                `[${this.id}][${marker}] Item matched and retrieved:`,
+                item
+              );
+              delete streamed.__marker__;
+
+              subscriber.next(streamed as T);
+              subscriber.complete();
+            }
+          };
+
+          controller.once('start', () => {
+            this.logger.debug(`[${this.id}] Stream started, storing item`);
+
+            this._store(item).subscribe({
+              next: (matcherFn) => {
+                if (isCompleted) return;
+
+                matcher = matcherFn;
+                this.logger.debug(
+                  `[${this.id}] Matcher ready, listening for events`
+                );
+                this.on('event', eventHandler);
+              },
+              error: (err) => {
+                cleanup();
+                subscriber.error(err);
+              },
+            });
+          });
+
+          // Cleanup function for subscription disposal
+          return cleanup;
+        });
       })
     );
   }

@@ -107,8 +107,6 @@ describe('aws-dynamodb', () => {
       DynamoDBProvider.from(testId(), options)
     );
 
-    console.log('!!! got instance', instance);
-
     const stream = await firstValueFrom(instance.stream());
 
     console.log('!!! got stream', stream);

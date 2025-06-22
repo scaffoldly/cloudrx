@@ -27,6 +27,7 @@ import {
   concatMap,
   defer,
   filter,
+  first,
   forkJoin,
   from,
   fromEvent,
@@ -278,17 +279,87 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               const nextShardIterator = response.NextShardIterator;
               const records = response.Records || [];
 
+              this.logger.debug(
+                `[${this.id}] GetRecords response: ${records.length} records, nextIterator: ${!!nextShardIterator}`
+              );
+
+              if (records.length > 0) {
+                this.logger.debug(`[${this.id}] Records details:`);
+                records.forEach((record, i) => {
+                  this.logger.debug(`[${this.id}] Record ${i}:`, {
+                    eventID: record.eventID,
+                    eventName: record.eventName,
+                    eventSource: record.eventSource,
+                    eventVersion: record.eventVersion,
+                    awsRegion: record.awsRegion,
+                    dynamodb: {
+                      ApproximateCreationDateTime:
+                        record.dynamodb?.ApproximateCreationDateTime,
+                      Keys: record.dynamodb?.Keys,
+                      SequenceNumber: record.dynamodb?.SequenceNumber,
+                      SizeBytes: record.dynamodb?.SizeBytes,
+                      StreamViewType: record.dynamodb?.StreamViewType,
+                      NewImage: record.dynamodb?.NewImage
+                        ? 'present'
+                        : 'absent',
+                      OldImage: record.dynamodb?.OldImage
+                        ? 'present'
+                        : 'absent',
+                    },
+                  });
+                });
+              } else {
+                this.logger.debug(
+                  `[${this.id}] No records returned from GetRecords`
+                );
+              }
+
               if (nextShardIterator) {
+                this.logger.debug(
+                  `[${this.id}] Scheduling next poll in ${!records.length ? 1000 : 0}ms`
+                );
                 setTimeout(
                   () => {
                     shardIterator.next(nextShardIterator);
                   },
-                  !records.length ? 100 : 0
+                  !records.length ? 1000 : 0
                 );
               } else {
                 this.logger.debug(
-                  `[${this.id}] No next iterator, stream may be closed`
+                  `[${this.id}] No next iterator, refreshing after delay`
                 );
+                // Continue streaming by refreshing the shard iterator
+                setTimeout(() => {
+                  // Get a fresh shard and iterator
+                  (this.getShards(signal) as Observable<Shard>)
+                    .pipe(first())
+                    .subscribe({
+                      next: (shard: Shard) => {
+                        from(
+                          this.streamClient.send(
+                            new GetShardIteratorCommand({
+                              StreamArn: this.streamArn,
+                              ShardId: shard.ShardId,
+                              ShardIteratorType: 'LATEST',
+                            }),
+                            { abortSignal: signal }
+                          )
+                        ).subscribe({
+                          next: (response) => {
+                            if (response.ShardIterator) {
+                              shardIterator.next(response.ShardIterator);
+                            }
+                          },
+                          error: (error) => {
+                            this.logger.error(
+                              `[${this.id}] Failed to refresh iterator:`,
+                              error
+                            );
+                          },
+                        });
+                      },
+                    });
+                }, 2000);
               }
 
               return records;
