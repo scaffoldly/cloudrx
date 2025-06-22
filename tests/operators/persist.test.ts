@@ -8,11 +8,8 @@ import {
   ReplaySubject,
   AsyncSubject,
 } from 'rxjs';
-import {
-  DynamoDBProvider,
-  DynamoDBProviderOptions,
-  persistTo,
-} from '../../src';
+import { DynamoDBProvider, DynamoDBProviderOptions } from '../../src';
+import { persistTo, Persistable } from '../../src/operators/persist';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { testId } from '../setup';
 import { createTestLogger } from '../utils/logger';
@@ -20,6 +17,69 @@ import { createTestLogger } from '../utils/logger';
 type Data = { message: string; timestamp: number };
 
 describe('aws-dynamodb', () => {
+  // describe.skip('persist-from', () => {
+  //   let container: DynamoDBLocalContainer;
+  //   let abort: AbortController;
+  //   const logger = createTestLogger();
+
+  //   beforeAll(async () => {
+  //     container = new DynamoDBLocalContainer(logger);
+  //     await container.start();
+  //   });
+
+  //   beforeEach(() => {
+  //     abort = new AbortController();
+  //   });
+
+  //   afterEach(() => {
+  //     if (!abort.signal.aborted) {
+  //       abort.abort();
+  //     }
+  //   });
+
+  //   afterAll(async () => {
+  //     if (container) {
+  //       await container.stop();
+  //     }
+  //   });
+
+  //   test('cold-observe', async () => {
+  //     const options: DynamoDBProviderOptions = {
+  //       client: container.getClient(),
+  //       hashKey: 'hashKey',
+  //       rangeKey: 'rangeKey',
+  //       signal: abort.signal,
+  //       logger,
+  //     };
+
+  //     const data1: Data = { message: 'cold', timestamp: performance.now() };
+  //     const data2: Data = { message: 'observe', timestamp: performance.now() };
+
+  //     // Use a cold observable that emits both values
+  //     const sourceTo$ = of(data1, data2);
+  //     const observeTo = sourceTo$.pipe(
+  //       persistTo(DynamoDBProvider.from(testId(), options))
+  //     );
+
+  //     const eventsTo = await firstValueFrom(observeTo.pipe(take(2), toArray()));
+  //     expect(eventsTo).toHaveLength(2);
+  //     expect(eventsTo[0]).toEqual(data1);
+  //     expect(eventsTo[1]).toEqual(data2);
+
+  //     const sourceFrom = of();
+  //     const observeFrom = sourceFrom.pipe(
+  //       persistFrom(DynamoDBProvider.from(testId(), options), true)
+  //     );
+
+  //     const eventsFrom = await firstValueFrom(
+  //       observeFrom.pipe(take(2), toArray())
+  //     );
+  //     expect(eventsFrom).toHaveLength(2);
+  //     expect(eventsFrom[0]).toEqual(data1);
+  //     expect(eventsFrom[1]).toEqual(data2);
+  //   });
+  // });
+
   describe('persist-to', () => {
     let container: DynamoDBLocalContainer;
     let abort: AbortController;
@@ -58,11 +118,13 @@ describe('aws-dynamodb', () => {
       const data1: Data = { message: 'cold', timestamp: performance.now() };
       const data2: Data = { message: 'observe', timestamp: performance.now() };
 
-      // Use a cold observable that emits both values
+      // Create persistable object with provider and source
       const source$ = of(data1, data2);
-      const observable = source$.pipe(
-        persistTo(DynamoDBProvider.from(testId(), options))
-      );
+      const persistable$ = of<Persistable<Data>>({
+        provider: DynamoDBProvider.from(testId(), options),
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       const events = await firstValueFrom(observable.pipe(take(2), toArray()));
       expect(events).toHaveLength(2);
@@ -84,9 +146,11 @@ describe('aws-dynamodb', () => {
 
       // Create basic Subject (hot observable)
       const source$ = new Subject<Data>();
-      const observable = source$.pipe(
-        persistTo(DynamoDBProvider.from(testId(), options))
-      );
+      const persistable$ = of<Persistable<Data>>({
+        provider: DynamoDBProvider.from(testId(), options),
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       // Start subscription
       const promise = firstValueFrom(observable.pipe(take(2), toArray()));
@@ -119,9 +183,11 @@ describe('aws-dynamodb', () => {
 
       // Create BehaviorSubject with initial value
       const source$ = new BehaviorSubject(data1);
-      const observable = source$.pipe(
-        persistTo(DynamoDBProvider.from(testId(), options))
-      );
+      const persistable$ = of<Persistable<Data>>({
+        provider: DynamoDBProvider.from(testId(), options),
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       // Start subscription
       const promise = firstValueFrom(observable.pipe(take(2), toArray()));
@@ -154,9 +220,11 @@ describe('aws-dynamodb', () => {
       source$.next(data1);
       source$.next(data2);
 
-      const observable = source$.pipe(
-        persistTo(DynamoDBProvider.from(testId(), options))
-      );
+      const persistable$ = of<Persistable<Data>>({
+        provider: DynamoDBProvider.from(testId(), options),
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       const events = await firstValueFrom(observable.pipe(take(2), toArray()));
       expect(events).toHaveLength(2);
@@ -180,9 +248,11 @@ describe('aws-dynamodb', () => {
 
       // Create AsyncSubject - only emits the last value when completed
       const source$ = new AsyncSubject<Data>();
-      const observable = source$.pipe(
-        persistTo(DynamoDBProvider.from(testId(), options))
-      );
+      const persistable$ = of<Persistable<Data>>({
+        provider: DynamoDBProvider.from(testId(), options),
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       // Start subscription
       const promise = firstValueFrom(observable);
@@ -231,7 +301,11 @@ describe('aws-dynamodb', () => {
 
       // Use persistTo to store and confirm items
       const source$ = of(data1, data2);
-      const observable = source$.pipe(persistTo(provider$));
+      const persistable$ = of<Persistable<Data>>({
+        provider: provider$,
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       const persistedEvents = await firstValueFrom(
         observable.pipe(take(2), toArray())
@@ -286,7 +360,11 @@ describe('aws-dynamodb', () => {
 
       // Create hot Subject and use persistTo
       const source$ = new Subject<Data>();
-      const observable = source$.pipe(persistTo(provider$));
+      const persistable$ = of<Persistable<Data>>({
+        provider: provider$,
+        source: source$,
+      });
+      const observable = persistable$.pipe(persistTo());
 
       const promise = firstValueFrom(observable.pipe(take(2), toArray()));
 
