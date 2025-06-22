@@ -39,8 +39,29 @@ export const persistTo = <T>(): OperatorFunction<Persistable<T>, T> => {
 };
 
 export const persistFrom = <T>(
-  _provider: Observable<ICloudProvider<unknown>>,
-  _all?: boolean
+  provider: Observable<ICloudProvider<unknown>>,
+  all?: boolean
 ): OperatorFunction<T, Persistable<T>> => {
-  throw new Error('not implemented yet');
+  return (source: Observable<T>): Observable<Persistable<T>> => {
+    const provider$ = provider.pipe(first());
+    const stream$ = provider$.pipe(
+      switchMap((providerInstance) => providerInstance.stream(all))
+    );
+
+    return source.pipe(
+      switchMap((value) => {
+        return new Observable<Persistable<T>>((subscriber) => {
+          subscriber.next({
+            provider,
+            source: new Observable<T>((sourceSubscriber) => {
+              sourceSubscriber.next(value);
+              sourceSubscriber.complete();
+            }),
+            stream: stream$,
+          });
+          subscriber.complete();
+        });
+      })
+    );
+  };
 };
