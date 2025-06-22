@@ -2,19 +2,17 @@ import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
   asyncScheduler,
   combineLatest,
-  delayWhen,
   filter,
-  first,
+  from,
   fromEvent,
   map,
   Observable,
   observeOn,
-  of,
   share,
   switchMap,
+  take,
   takeUntil,
   tap,
-  timer,
 } from 'rxjs';
 import { EventEmitter } from 'events';
 import { Logger, NoOpLogger } from '..';
@@ -25,9 +23,30 @@ export type CloudProviderOptions = {
   pollInterval?: number;
 };
 
-export interface StreamController {
-  signal: AbortSignal;
-  stop: (reason?: unknown) => Promise<void>;
+export class StreamController extends EventEmitter<{
+  start: [];
+  stop: [];
+  error: [Error];
+}> {
+  public readonly signal: AbortSignal;
+
+  constructor(private abort: AbortController) {
+    super({ captureRejections: true });
+    this.signal = abort.signal;
+  }
+
+  public stop(reason?: Error): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.signal.addEventListener('abort', () => {
+        if (reason) {
+          this.emit('error', reason);
+        }
+        this.emit('stop');
+        resolve();
+      });
+      this.abort.abort(reason);
+    });
+  }
 }
 
 /**
@@ -42,8 +61,8 @@ export type Streamed<T, Marker> = T & {
 export interface ICloudProvider<TEvent> {
   abort(reason?: unknown): void;
   unmarshall<T>(event: TEvent): Streamed<T, unknown>;
-  stream(): StreamController;
-  store<T>(item: T, streamController?: StreamController): Observable<T>;
+  stream(): Observable<StreamController>;
+  store<T>(item: T, controller?: Observable<StreamController>): Observable<T>;
 }
 
 /**
@@ -53,10 +72,7 @@ export interface ICloudProvider<TEvent> {
  */
 export abstract class CloudProvider<TEvent>
   extends EventEmitter<{
-    streamEvent: [TEvent];
-    streamStart: [];
-    streamStop: [];
-    streamError: [Error];
+    event: [TEvent];
   }>
   implements ICloudProvider<TEvent>
 {
@@ -76,11 +92,12 @@ export abstract class CloudProvider<TEvent>
     }
 
     CloudProvider.aborts[id] = new AbortController();
+
     opts.signal.addEventListener('abort', () => {
-      CloudProvider.aborts[id]?.abort();
+      this.abort(new Error('Provider aborted from global signal'));
       // Cancel all streams for this provider
       if (CloudProvider.streams[id]) {
-        CloudProvider.streams[id].stop('Provider aborted');
+        CloudProvider.streams[id].stop(new Error('Provider aborted'));
         delete CloudProvider.streams[id];
       }
     });
@@ -135,162 +152,131 @@ export abstract class CloudProvider<TEvent>
    * Streams are lazily created and shared across all callers.
    * @returns Controller for the shared stream
    */
-  public stream(): StreamController {
-    // Return existing stream if it exists
-    const existingStream = CloudProvider.streams[this.id];
-    if (existingStream) {
-      // We need to ensure listeners are set up before emitting the streamStart event
-      // Use Promise.resolve().then() to schedule the emission in the microtask queue
-      // This provides a more deterministic approach than arbitrary timeouts
-      // while ensuring listeners have a chance to attach
-      Promise.resolve().then(() => {
-        // The additional timeout ensures that microtasks from the caller's execution context
-        // have completed before we emit the streamStart event
-        setTimeout(() => this.emit('streamStart'), 10);
+  public stream(): Observable<StreamController> {
+    let controller = CloudProvider.streams[this.id];
+
+    if (controller) {
+      this.logger.debug(`[${this.id}] Reusing existing stream controller`);
+      return new Observable<StreamController>((subscriber) => {
+        subscriber.next(controller!);
+        subscriber.complete();
+        Promise.resolve().then(() => {
+          // Emit start event immediately if stream already exists
+          setTimeout(() => controller!.emit('start'), 10);
+        });
       });
-      return existingStream;
     }
 
-    // Create new shared stream
+    this.logger.debug(`[${this.id}] Creating new stream controller`);
     const streamAbort = new AbortController();
-    let isStarted = false;
+    let started = false;
 
-    const controller: StreamController = {
-      signal: streamAbort.signal,
-      stop: (reason?: unknown): Promise<void> => {
-        return new Promise<void>((resolve) => {
-          streamAbort.abort(reason);
-          this.emit('streamStop');
-          // Remove from streams registry
-          delete CloudProvider.streams[this.id];
-          resolve();
-        });
-      },
-    };
+    controller = CloudProvider.streams[this.id] = new StreamController(
+      streamAbort
+    );
 
-    const sharedObservable = this._stream(controller).pipe(
+    controller.on('error', (error) => {
+      this.logger.error(`[${this.id}] Stream error:`, error);
+    });
+
+    controller.on('stop', () => {
+      this.logger.debug(`[${this.id}] Stream stopped`);
+      delete CloudProvider.streams[this.id];
+    });
+
+    const shared = this._stream(controller).pipe(
+      observeOn(asyncScheduler),
       takeUntil(fromEvent(this.signal, 'abort')),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
-      // Emit streamStart immediately on first event batch, then apply delay for empty arrays
-      tap((_events) => {
-        if (!isStarted) {
-          isStarted = true;
-          this.emit('streamStart');
-        }
-      }),
-      // Delay empty arrays to avoid tight polling loops
-      delayWhen((events) => (events.length === 0 ? timer(100) : of(events))),
       tap((events) => {
-        // Emit individual events
+        if (!started) {
+          started = true;
+          this.logger.debug(`[${this.id}] Stream started`);
+          controller.emit('start');
+        }
         if (events.length > 0) {
+          this.logger.debug(`[${this.id}] Streamed ${events.length} events`);
           events.forEach((event) => {
-            this.emit('streamEvent', event);
+            this.emit('event', event);
           });
         }
       }),
       share({
-        resetOnError: false,
-        resetOnComplete: false,
-        resetOnRefCountZero: false,
+        resetOnError: true,
+        resetOnComplete: true,
+        resetOnRefCountZero: true,
       })
     );
 
-    // Store in global registry
-    CloudProvider.streams[this.id] = controller;
-
-    // Subscribe to make it hot and handle lifecycle events
-    sharedObservable.subscribe({
-      error: (error) => {
-        isStarted = false;
-        streamAbort.abort(error);
-        this.emit('streamError', error);
-        // Remove from streams registry on error
-        delete CloudProvider.streams[this.id];
+    shared.subscribe({
+      error: async (error) => {
+        this.logger.error(`[${this.id}] Stream error:`, error);
+        started = false;
+        await controller.stop(error);
       },
-      complete: () => {
-        isStarted = false;
-        streamAbort.abort();
-        this.emit('streamStop');
-        // Remove from streams registry on completion
-        delete CloudProvider.streams[this.id];
+      complete: async () => {
+        this.logger.debug(`[${this.id}] Stream completed`);
+        started = false;
+        await controller.stop();
       },
     });
 
-    return controller;
+    return new Observable<StreamController>((subscriber) => {
+      this.logger.debug(`[${this.id}] Emitting new stream controller`);
+      subscriber.next(controller);
+      subscriber.complete();
+    });
   }
 
   /**
    * Store an item and wait for it to appear in the stream.
    * @param item The item to store
-   * @param streamController Optional stream controller to use for listening. If not provided, creates or reuses existing stream.
+   * @param controller Optional stream controller to use for listening. If not provided, creates or reuses existing stream.
    * @returns Observable that emits the item when it appears in the stream
    */
-  public store<T>(item: T, streamController?: StreamController): Observable<T> {
+  public store<T>(
+    item: T,
+    controller?: Observable<StreamController>
+  ): Observable<T> {
     this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
 
     // Use provided stream controller or create/get one
-    const controller = streamController || this.stream();
+    const controller$ = controller || this.stream();
 
-    return new Observable<T>((subscriber) => {
-      // Always wait for stream to be ready before storing
-      // This ensures the stream iterator is established and can capture the event
-      const started$ = fromEvent(this, 'streamStart').pipe(
-        first(),
-        // Use asyncScheduler to ensure consistent timing with stream emission
-        observeOn(asyncScheduler),
-        tap(() =>
-          this.logger.debug(`[${this.id}] Iterator ready, now storing item`)
-        ),
-        switchMap(() => this._store(item))
-      );
+    return controller$.pipe(
+      switchMap((controller) => {
+        const matcher$ = fromEvent(controller, 'start').pipe(
+          tap(() => {
+            this.logger.debug(`[${this.id}] Stream started, now storing item`);
+          }),
+          take(1),
+          switchMap(() => from(this._store(item)))
+        );
 
-      // Set up event listening
-      const eventStream$ = (
-        fromEvent(this, 'streamEvent') as Observable<TEvent>
-      ).pipe(
-        takeUntil(fromEvent(this, 'streamStop')),
-        takeUntil(fromEvent(this, 'streamError')),
-        takeUntil(fromEvent(controller.signal, 'abort'))
-      );
+        const streamed$ = (fromEvent(this, 'event') as Observable<TEvent>).pipe(
+          tap((event) => {
+            this.logger.debug(`[${this.id}] Received event:`, event);
+          }),
+          takeUntil(fromEvent(controller.signal, 'abort')),
+          takeUntil(fromEvent(controller, 'stop')),
+          takeUntil(fromEvent(controller, 'error'))
+        );
 
-      const storeAndWait$ = combineLatest([started$, eventStream$]).pipe(
-        filter(([matcher, event]) => {
-          const matches = matcher(event);
-          if (matches) {
-            this.logger.info(
-              `[${this.id}] Event matched! Completing store operation`
-            );
-          } else {
-            this.logger.debug(`[${this.id}] Event did not match stored item`);
-          }
-          return matches;
-        }),
-        first(), // Take only the first matching event
-        map(() => item) // Return the original item
-      );
-
-      const subscription = storeAndWait$.subscribe({
-        next: (result) => {
-          subscriber.next(result);
-        },
-        complete: () => {
-          this.logger.debug(`[${this.id}] Store operation complete:`, item);
-          // Do not stop the stream controller - it's shared
-          subscriber.complete();
-        },
-        error: (error) => {
-          this.logger.error(`[${this.id}] Store operation failed:`, error);
-          // Don't stop the shared stream controller on individual store errors
-          subscriber.error(error);
-        },
-      });
-
-      // Cleanup function
-      return () => {
-        // Do not stop the stream controller - it's shared
-        subscription.unsubscribe();
-      };
-    });
+        return combineLatest([matcher$, streamed$]).pipe(
+          filter(([matcher, event]) => {
+            return matcher(event);
+          }),
+          take(1),
+          map(([, event]) => this.unmarshall(event) as Streamed<T, unknown>),
+          map((streamed) => {
+            const marker = streamed.__marker__;
+            this.logger.debug(`[${this.id}][${marker}] Item stored:`, item);
+            delete streamed.__marker__;
+            return streamed as T;
+          })
+        );
+      })
+    );
   }
 }
 

@@ -265,7 +265,10 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         )
       ),
       concatMap((position) => {
-        this.logger.debug(`[${this.id}] Getting records with iterator`);
+        this.logger.debug(
+          `[${this.id}] Getting records with iterator`,
+          position
+        );
         return from(
           this.streamClient
             .send(new GetRecordsCommand({ ShardIterator: position }), {
