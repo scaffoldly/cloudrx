@@ -156,12 +156,12 @@ export abstract class CloudProvider<TEvent>
         subscriber.next(controller!);
         subscriber.complete();
         // For existing streams, emit start event after a microtask to indicate readiness
-        Promise.resolve().then(() => {
-          this.logger.debug(
-            `[${this.id}] Emitting start event for existing stream`
-          );
-          setTimeout(() => controller!.emit('start'), 100);
-        });
+        // Promise.resolve().then(() => {
+        //   this.logger.debug(
+        //     `[${this.id}] Emitting start event for existing stream`
+        //   );
+        //   setTimeout(() => controller!.emit('start'), 100);
+        // });
       });
     }
 
