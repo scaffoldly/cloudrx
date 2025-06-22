@@ -1,10 +1,15 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import {
   asyncScheduler,
+  catchError,
+  concatMap,
+  EMPTY,
   fromEvent,
+  map,
   Observable,
   observeOn,
   share,
+  Subject,
   switchMap,
   takeUntil,
   tap,
@@ -74,6 +79,7 @@ export abstract class CloudProvider<TEvent>
   private _logger: Logger;
   public static readonly aborts: Record<string, AbortController> = {};
   private static readonly streams: Record<string, StreamController> = {};
+  private store$ = new Subject<() => Observable<void>>();
 
   protected constructor(
     protected readonly id: string,
@@ -88,6 +94,21 @@ export abstract class CloudProvider<TEvent>
 
     CloudProvider.aborts[id] = new AbortController();
 
+    // Set up the RxJS-based store queue processor
+    const store = this.store$
+      .pipe(
+        concatMap((operation) =>
+          operation().pipe(
+            catchError((error) => {
+              this.logger.error(`[${this.id}] Store operation failed:`, error);
+              return EMPTY; // Continue processing other operations
+            })
+          )
+        ),
+        takeUntil(fromEvent(opts.signal, 'abort'))
+      )
+      .subscribe();
+
     opts.signal.addEventListener('abort', () => {
       this.abort(new Error('Provider aborted from global signal'));
       // Cancel all streams for this provider
@@ -95,6 +116,7 @@ export abstract class CloudProvider<TEvent>
         CloudProvider.streams[id].stop(new Error('Provider aborted'));
         delete CloudProvider.streams[id];
       }
+      store.unsubscribe();
     });
   }
 
@@ -263,7 +285,7 @@ export abstract class CloudProvider<TEvent>
     return controller$.pipe(
       switchMap((controller) => {
         this.logger.debug(
-          `[${this.id}] Got stream controller, waiting for start event`
+          `[${this.id}] Got stream controller, queueing store operation`
         );
 
         return new Observable<T>((subscriber) => {
@@ -277,6 +299,28 @@ export abstract class CloudProvider<TEvent>
             }
           };
 
+          // Create the store operation as an Observable
+          const storeOperation = (): Observable<void> => {
+            return this._store(item).pipe(
+              tap((matcherFn) => {
+                if (!isCompleted) {
+                  matcher = matcherFn;
+                  this.logger.debug(
+                    `[${this.id}] Matcher ready, listening for events`
+                  );
+                  this.on('event', eventHandler);
+                }
+              }),
+              map(() => void 0), // Convert to Observable<void>
+              catchError((err) => {
+                cleanup();
+                subscriber.error(err);
+                throw err; // Re-throw to let the queue error handler catch it
+              })
+            );
+          };
+
+          // Add event handler
           eventHandler = (event: TEvent): void => {
             if (isCompleted || !matcher) return;
 
@@ -297,24 +341,12 @@ export abstract class CloudProvider<TEvent>
             }
           };
 
+          // Wait for start, then queue the operation
           controller.once('start', () => {
-            this.logger.debug(`[${this.id}] Stream started, storing item`);
-
-            this._store(item).subscribe({
-              next: (matcherFn) => {
-                if (isCompleted) return;
-
-                matcher = matcherFn;
-                this.logger.debug(
-                  `[${this.id}] Matcher ready, listening for events`
-                );
-                this.on('event', eventHandler);
-              },
-              error: (err) => {
-                cleanup();
-                subscriber.error(err);
-              },
-            });
+            this.logger.debug(
+              `[${this.id}] Stream started, queueing store operation`
+            );
+            this.store$.next(storeOperation);
           });
 
           // Cleanup function for subscription disposal
