@@ -1,18 +1,13 @@
-import { setMaxListeners } from 'events';
 import type { Config } from '@jest/types';
 
-export function testId(): string {
-  return expect
-    .getState()
-    .currentTestName!.replace(/[^a-zA-Z0-9_-]/g, '-')
-    .replace(/--+/g, '-');
-}
-
-export default async function setup(
+/**
+ * Jest Global Setup Module
+ * This runs once before all tests and has access to Jest configuration
+ * We use it to detect --verbose and --silent flags and set environment variables
+ */
+export default async function globalSetup(
   globalConfig: Config.GlobalConfig
 ): Promise<void> {
-  setMaxListeners(50);
-
   // Detect Jest flags from the global configuration
   const isVerbose = globalConfig.verbose || false;
   const isSilent = globalConfig.silent || false;

@@ -4,15 +4,17 @@ import { DynamoDBLocalContainer } from './local';
 import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
 import { testId } from '../../../setup';
 import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../../src';
+import { createTestLogger } from '../../../utils/logger';
 
 describe('aws-dynamodb', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController;
+  const logger = createTestLogger();
 
   type Data = { message: string; timestamp: number };
 
   beforeAll(async () => {
-    container = new DynamoDBLocalContainer();
+    container = new DynamoDBLocalContainer(logger);
     await container.start();
   });
 
@@ -40,7 +42,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger,
     };
 
     const instance1$ = DynamoDBProvider.from(testId(), options);
@@ -60,7 +62,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger,
     };
 
     const instance = await firstValueFrom(
@@ -76,7 +78,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger,
     };
 
     const instance = await firstValueFrom(
@@ -92,7 +94,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger,
     };
 
     const instance = await firstValueFrom(
@@ -111,7 +113,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      logger,
     };
 
     const instance = await firstValueFrom(
@@ -147,7 +149,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      logger,
     };
 
     const instance1 = await firstValueFrom(
@@ -196,7 +198,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      logger: console,
+      logger,
     };
 
     const instance = await firstValueFrom(
@@ -228,7 +230,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: testAbort.signal,
-      // logger: console,
+      logger,
     };
 
     // Create multiple instances
@@ -352,7 +354,7 @@ describe('aws-dynamodb', () => {
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger,
       pollInterval: 1000, // 1 second for faster testing
     };
 

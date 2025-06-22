@@ -203,7 +203,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
 
     const shardIteratorType = all ? 'TRIM_HORIZON' : 'LATEST';
     this.logger.debug(
-      `[${this.id}] Starting _stream with since: ${shardIteratorType}, streamArn: ${this.streamArn}`
+      `[${this.id}] Starting _stream with ${shardIteratorType}, streamArn: ${this.streamArn}`
     );
     const shardIterator = new Subject<string>();
 
@@ -290,7 +290,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   protected init(signal: AbortSignal): Observable<this> {
-    this.logger.info(`[${this.id}] Initializing DynamoDB provider...`);
+    this.logger.debug(`[${this.id}] Initializing DynamoDB provider...`);
     const describe$ = defer(() => {
       this.logger.debug(`[${this.id}] Describing existing table and TTL...`);
       return forkJoin([
@@ -523,7 +523,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
 
     return check(0).pipe(
       map(({ table }) => {
-        this.logger.info(`[${this.id}] Setting table ARN and stream ARN...`);
+        this.logger.debug(`[${this.id}] Setting table ARN and stream ARN...`);
         this._tableArn = `${table.TableArn}`;
         this._streamArn = `${table.LatestStreamArn}`;
       }),
@@ -553,9 +553,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
             });
       }),
       map(() => {
-        this.logger.info(
-          `[${this.id}] DynamoDB provider initialization complete!`
-        );
+        this.logger.info(`[${this.id}] ${this._tableArn}`);
         return this;
       })
     );

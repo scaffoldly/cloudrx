@@ -4,13 +4,16 @@ import {
   TestContainer,
 } from 'testcontainers';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { Logger } from '../../../../src';
 
 export class DynamoDBLocalContainer {
   private container: TestContainer;
   private startedContainer: StartedTestContainer | null = null;
   private client: DynamoDBClient | null = null;
+  private logger: Logger;
 
-  constructor() {
+  constructor(logger: Logger) {
+    this.logger = logger;
     this.container = new GenericContainer('amazon/dynamodb-local:latest')
       .withExposedPorts(8000)
       .withCommand(['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']);
@@ -18,13 +21,13 @@ export class DynamoDBLocalContainer {
 
   async start(): Promise<void> {
     try {
-      console.info('Starting DynamoDB Local container...');
+      this.logger.info('Starting DynamoDB Local container...');
       this.startedContainer = await this.container.start();
 
       const port = this.startedContainer.getMappedPort(8000);
       const endpoint = `http://localhost:${port}`;
 
-      console.info(`DynamoDB Local started at ${endpoint}`);
+      this.logger.info(`DynamoDB Local started at ${endpoint}`);
 
       // Create DynamoDB client pointing to local instance
       this.client = new DynamoDBClient({
@@ -60,7 +63,7 @@ export class DynamoDBLocalContainer {
 
   async stop(): Promise<void> {
     if (this.startedContainer) {
-      console.info('Stopping DynamoDB Local container...');
+      this.logger.info('Stopping DynamoDB Local container...');
       await this.startedContainer.stop();
       this.startedContainer = null;
     }

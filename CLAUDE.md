@@ -84,9 +84,23 @@ result$.subscribe(item => {
 ### Testing
 
 ```bash
-npm test                    # Run unit tests
+npm test                    # Run unit tests (info level logs)
+npm test -- --verbose      # Run with debug level logs  
+npm test -- --silent       # Run with no logs
+npm run test:watch         # Watch mode for development
 npm run test:integration   # Run integration tests
 ```
+
+#### Test Logging System
+
+The test suite uses a Jest Global Setup Module that automatically detects Jest's built-in flags and configures pino-based logging accordingly:
+
+- **Default Mode**: `npm test` - Shows info+ level logs with structured pino formatting
+- **Verbose Mode**: `npm test -- --verbose` - Shows debug+ level logs for detailed troubleshooting
+- **Silent Mode**: `npm test -- --silent` - Suppresses all log output for clean CI runs
+- **Watch Mode**: `npm run test:watch` - Standard Jest watch mode with default logging
+
+The logging system uses pino exclusively for all log levels, providing consistent structured logging with pretty formatting during development.
 
 ### Code Quality
 
@@ -278,6 +292,24 @@ npm run build             # Build for production
 - **Solution**: Distinguished between normal shutdown (AbortError) and actual errors
 - **Implementation**: Use debug-level logging for AbortError, error-level for actual problems
 - **Result**: Clean test output without losing important error information
+
+### Test Logging System Implementation
+
+- **Issue**: Test logs were inconsistent and didn't respect Jest's built-in verbosity flags
+- **Solution**: Implemented Jest Global Setup Module with pino-based logging that automatically detects `--verbose` and `--silent` flags
+- **Architecture**:
+  - **Global Setup**: `/tests/setup.ts` detects Jest flags and sets `JEST_LOG_LEVEL` environment variable
+  - **Logger Factory**: `/tests/utils/logger.ts` uses pino exclusively for all log levels
+  - **Pino Integration**: Structured logging with pretty formatting and automatic silent mode handling
+- **Key Benefits**:
+  - Clean CI runs with `--silent` flag (no log output)
+  - Detailed debugging with `--verbose` flag (debug-level pino logs)
+  - Consistent structured logging across all test scenarios
+  - No manual environment variable management required
+- **Usage**: 
+  - `npm test` - Standard info-level logs
+  - `npm test -- --verbose` - Debug-level logs for troubleshooting
+  - `npm test -- --silent` - No logs for clean CI output
 
 ## Session Learnings and Recommendations
 

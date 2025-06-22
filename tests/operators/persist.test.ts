@@ -15,6 +15,7 @@ import {
 } from '../../src';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { testId } from '../setup';
+import { createTestLogger } from '../utils/logger';
 
 type Data = { message: string; timestamp: number };
 
@@ -22,9 +23,10 @@ describe('aws-dynamodb', () => {
   describe('persist-to', () => {
     let container: DynamoDBLocalContainer;
     let abort: AbortController;
+    const logger = createTestLogger();
 
     beforeAll(async () => {
-      container = new DynamoDBLocalContainer();
+      container = new DynamoDBLocalContainer(logger);
       await container.start();
     });
 
@@ -50,7 +52,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'cold', timestamp: performance.now() };
@@ -74,7 +76,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'hot', timestamp: performance.now() };
@@ -112,7 +114,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'behavior', timestamp: performance.now() };
@@ -147,7 +149,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'replay', timestamp: performance.now() };
@@ -176,7 +178,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'async', timestamp: performance.now() };
@@ -208,7 +210,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'cold', timestamp: performance.now() };
@@ -263,7 +265,7 @@ describe('aws-dynamodb', () => {
         hashKey: 'hashKey',
         rangeKey: 'rangeKey',
         signal: abort.signal,
-        logger: console,
+        logger,
       };
 
       const data1: Data = { message: 'subject', timestamp: performance.now() };
