@@ -82,9 +82,6 @@ describe('aws-dynamodb', () => {
       const data1: Data = { message: 'hot', timestamp: performance.now() };
       const data2: Data = { message: 'subject', timestamp: performance.now() };
 
-      // Wait for provider to initialize first (needed for hot observables)
-      await firstValueFrom(DynamoDBProvider.from(testId(), options));
-
       // Create basic Subject (hot observable)
       const source$ = new Subject<Data>();
       const observable = source$.pipe(
@@ -119,9 +116,6 @@ describe('aws-dynamodb', () => {
 
       const data1: Data = { message: 'behavior', timestamp: performance.now() };
       const data2: Data = { message: 'subject', timestamp: performance.now() };
-
-      // Wait for provider to initialize first (needed for hot observables)
-      await firstValueFrom(DynamoDBProvider.from(testId(), options));
 
       // Create BehaviorSubject with initial value
       const source$ = new BehaviorSubject(data1);

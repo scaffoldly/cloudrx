@@ -63,10 +63,11 @@ result$.subscribe(item => {
 - **Purpose**: Stores items to a cloud provider and waits for them to appear back in the stream
 - **Usage**: `source$.pipe(persistTo(provider$))`
 - **Key Features**:
-  - Handles async provider initialization with `first()` operator
+  - Handles async provider initialization per emission to support hot observables
   - Uses `mergeMap` to store each source value via `provider.store()`
   - Returns the original item after successful storage and stream confirmation
   - Proper cleanup via provider's abort signal handling
+  - **Hot Observable Support**: No explicit provider initialization required - operator handles timing internally
 - **Observable Compatibility**: Works with all RxJS observable types:
   - **Cold Observables** (`of()`, `from()`) - Immediate emission on subscription
   - **Subject** - Hot observable, no initial value, no replay
@@ -75,8 +76,8 @@ result$.subscribe(item => {
   - **AsyncSubject** - Only emits the final value when completed
 - **Testing Patterns**:
   - **Cold Observables**: Use `of()` for simple, predictable test scenarios
-  - **Hot Observables**: Wait for provider initialization with `await firstValueFrom(provider$)` before creating subjects
-  - **Timing Control**: Use `setTimeout()` for async emissions in hot observable tests
+  - **Hot Observables**: No explicit provider initialization needed - `persistTo` handles timing automatically
+  - **Timing Control**: Use `setTimeout()` for async emissions in hot observable tests  
   - **Proper Cleanup**: Always call `subject.complete()` to prevent memory leaks
 
 ## Development Commands
