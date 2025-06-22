@@ -195,11 +195,15 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return DynamoDBProvider.instances[id];
   }
 
-  protected _stream(controller: StreamController): Observable<_Record[]> {
+  protected _stream(
+    controller: StreamController,
+    all: boolean = false
+  ): Observable<_Record[]> {
     const signal = controller.signal;
 
+    const shardIteratorType = all ? 'TRIM_HORIZON' : 'LATEST';
     this.logger.debug(
-      `[${this.id}] Starting _stream with since: latest, streamArn: ${this.streamArn}`
+      `[${this.id}] Starting _stream with since: ${shardIteratorType}, streamArn: ${this.streamArn}`
     );
     const shardIterator = new Subject<string>();
 
@@ -209,7 +213,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         // Process each shard
         switchMap((shard) => {
           this.logger.debug(
-            `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: LATEST at ${Date.now()}`
+            `[${this.id}] Getting iterator for shard: ${shard.ShardId} with type: ${shardIteratorType} at ${Date.now()}`
           );
           return from(
             this.streamClient
@@ -217,7 +221,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
                 new GetShardIteratorCommand({
                   StreamArn: this.streamArn,
                   ShardId: shard.ShardId,
-                  ShardIteratorType: 'LATEST',
+                  ShardIteratorType: shardIteratorType,
                 })
               )
               .then((response) => {

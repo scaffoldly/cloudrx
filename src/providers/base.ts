@@ -61,7 +61,7 @@ export type Streamed<T, Marker> = T & {
 export interface ICloudProvider<TEvent> {
   abort(reason?: unknown): void;
   unmarshall<T>(event: TEvent): Streamed<T, unknown>;
-  stream(): Observable<StreamController>;
+  stream(all?: boolean): Observable<StreamController>;
   store<T>(item: T, controller?: Observable<StreamController>): Observable<T>;
 }
 
@@ -148,12 +148,13 @@ export abstract class CloudProvider<TEvent>
 
   /**
    * Stream events from the provider.
-   * @param since Whether to start from oldest or latest events
    * @param controller The controller to manage the stream
+   * @param all Whether to start from oldest (TRIM_HORIZON) or latest (LATEST) events
    * @returns Observable of event arrays. Empty arrays will be delayed automatically.
    */
   protected abstract _stream(
-    controller: StreamController
+    controller: StreamController,
+    all?: boolean
   ): Observable<TEvent[]>;
 
   /**
@@ -175,9 +176,10 @@ export abstract class CloudProvider<TEvent>
   /**
    * Get or create a shared stream for this provider.
    * Streams are lazily created and shared across all callers.
+   * @param all Whether to stream all events from the beginning (TRIM_HORIZON) or only new events (LATEST)
    * @returns Controller for the shared stream
    */
-  public stream(): Observable<StreamController> {
+  public stream(all: boolean = false): Observable<StreamController> {
     let controller = CloudProvider.streams[this.id];
 
     if (controller) {
@@ -218,7 +220,7 @@ export abstract class CloudProvider<TEvent>
       delete CloudProvider.streams[this.id];
     });
 
-    const shared = this._stream(controller).pipe(
+    const shared = this._stream(controller, all).pipe(
       observeOn(asyncScheduler),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
       tap((events) => {
