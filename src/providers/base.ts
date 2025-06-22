@@ -209,10 +209,6 @@ export abstract class CloudProvider<TEvent>
       takeUntil(fromEvent(this.signal, 'abort')),
       takeUntil(fromEvent(streamAbort.signal, 'abort')),
       tap((events) => {
-        this.logger.debug(
-          `[${this.id}] Processing ${events.length} events from _stream`
-        );
-
         if (!started) {
           started = true;
           this.logger.debug(
@@ -236,8 +232,6 @@ export abstract class CloudProvider<TEvent>
             this.logger.debug(`[${this.id}] Emitting event ${i}:`, event);
             this.emit('event', event);
           });
-        } else {
-          this.logger.debug(`[${this.id}] No events to emit (empty array)`);
         }
       }),
       share({

@@ -268,19 +268,12 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               const nextShardIterator = response.NextShardIterator;
               const records = response.Records || [];
 
-              this.logger.debug(
-                `[${this.id}] GetRecords response: ${records.length} records, nextIterator: ${!!nextShardIterator}`
-              );
-
               if (nextShardIterator) {
-                this.logger.debug(
-                  `[${this.id}] Scheduling next poll in ${!records.length ? 1000 : 0}ms`
-                );
                 setTimeout(
                   () => {
                     shardIterator.next(nextShardIterator);
                   },
-                  !records.length ? 1000 : 0
+                  !records.length ? 100 : 0
                 );
               }
 
