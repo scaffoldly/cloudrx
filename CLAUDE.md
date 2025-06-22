@@ -161,6 +161,14 @@ npm run build             # Build for production
 - **Error Scenarios**: Test both normal shutdown (AbortError) and actual error conditions
 - **Subject Type Coverage**: Test with multiple RxJS subject types to ensure broad compatibility
 
+#### Test Infrastructure Patterns
+
+- **Logger Creation**: Create logger once per test suite using `const logger = createTestLogger()` in describe block
+- **Container Initialization**: Pass logger to test containers (e.g., `new DynamoDBLocalContainer(logger)`)
+- **Consistent Options**: Reuse `DynamoDBProviderOptions` object with shared logger across test cases
+- **Performance**: Avoid repetitive object creation within individual test cases
+- **Verbosity Control**: All test components should respect Jest's `--verbose`, `--silent`, and default modes
+
 ## Testing Notes
 
 ### DynamoDB Local
@@ -310,6 +318,33 @@ npm run build             # Build for production
   - `npm test` - Standard info-level logs
   - `npm test -- --verbose` - Debug-level logs for troubleshooting
   - `npm test -- --silent` - No logs for clean CI output
+
+### Test Infrastructure Optimization
+
+- **Issue**: Repetitive logger creation and console usage in test infrastructure
+- **Solution**: Centralized logger creation and consistent logging interfaces
+- **Implementation**:
+  - **Logger Optimization**: Create logger once per test suite instead of per test case
+  - **DynamoDBLocalContainer**: Updated to accept and use structured logger instead of console
+  - **Consistent Interfaces**: All test components use the same logger interface
+- **Benefits**:
+  - Performance improvement from reduced object creation
+  - Consistent logging behavior across all test components  
+  - Container logs respect Jest verbosity flags (silent/verbose)
+  - Clean separation between test infrastructure and application logging
+
+### DynamoDB Provider Logging Enhancement
+
+- **Issue**: Verbose initialization logs cluttered normal test output
+- **Solution**: Optimized log levels to show only essential information during normal operation
+- **Changes**:
+  - Moved initialization steps to debug level (`"Initializing..."`, `"Setting ARNs..."`)
+  - Enhanced completion message to show Table ARN: `"DynamoDB table ready: {tableArn}"`
+  - Debug mode still shows full initialization sequence for troubleshooting
+- **Result**: 
+  - Normal mode: Single info log with concrete Table ARN information
+  - Verbose mode: Full debug trace for troubleshooting
+  - Silent mode: No logs for clean CI output
 
 ## Session Learnings and Recommendations
 
