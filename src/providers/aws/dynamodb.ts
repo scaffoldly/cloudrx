@@ -603,10 +603,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
   }
 
   protected _store<T>(item: T): Observable<(event: _Record) => boolean> {
-    this.logger.debug(
-      `[${this.id}] Starting store operation for item at ${Date.now()}:`,
-      item
-    );
     const timestamp = Date.now();
     const hashKeyValue = `item-${timestamp}`;
     const rangeKeyValue = `${timestamp}`;
@@ -620,11 +616,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       expires: Math.floor(Date.now() / 1000) + 3600, // Expire in 1 hour
     };
 
-    this.logger.debug(
-      `[${this.id}] Storing record to table ${this.tableName}:`,
-      record
-    );
-
     return from(
       this.client.send(
         new PutCommand({
@@ -635,9 +626,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       )
     ).pipe(
       map(() => {
-        this.logger.debug(
-          `[${this.id}] Successfully stored item with keys: ${hashKeyValue}, ${rangeKeyValue}`
-        );
         // Return a matcher function that checks if the event matches our stored item
         return (event: _Record): boolean => {
           const dynamoRecord = event.dynamodb;
@@ -646,15 +634,9 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
           const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
           const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
 
-          const matches =
-            eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue;
-          if (matches) {
-            this.logger.debug(
-              `[${this.id}] Found matching event for stored item!`
-            );
-          }
-
-          return matches;
+          return (
+            eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue
+          );
         };
       }),
       catchError((error) => {

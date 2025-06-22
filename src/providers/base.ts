@@ -225,11 +225,7 @@ export abstract class CloudProvider<TEvent>
         }
 
         if (events.length > 0) {
-          this.logger.debug(
-            `[${this.id}] Emitting ${events.length} events to listeners`
-          );
-          events.forEach((event, i) => {
-            this.logger.debug(`[${this.id}] Emitting event ${i}:`, event);
+          events.forEach((event) => {
             this.emit('event', event);
           });
         }
@@ -271,17 +267,11 @@ export abstract class CloudProvider<TEvent>
     item: T,
     controller?: Observable<StreamController>
   ): Observable<T> {
-    this.logger.debug(`[${this.id}] Starting store() method for item:`, item);
-
     // Use provided stream controller or create/get one
     const controller$ = controller || this.stream();
 
     return controller$.pipe(
       switchMap((controller) => {
-        this.logger.debug(
-          `[${this.id}] Got stream controller, queueing store operation`
-        );
-
         return new Observable<T>((subscriber) => {
           let matcher: (event: TEvent) => boolean;
           let isCompleted = false;
@@ -299,9 +289,6 @@ export abstract class CloudProvider<TEvent>
               tap((matcherFn) => {
                 if (!isCompleted) {
                   matcher = matcherFn;
-                  this.logger.debug(
-                    `[${this.id}] Matcher ready, listening for events`
-                  );
                   this.on('event', eventHandler);
                 }
               }),
@@ -337,9 +324,6 @@ export abstract class CloudProvider<TEvent>
 
           // Wait for start, then queue the operation
           controller.once('start', () => {
-            this.logger.debug(
-              `[${this.id}] Stream started, queueing store operation`
-            );
             this.store$.next(storeOperation);
           });
 
