@@ -67,7 +67,17 @@ result$.subscribe(item => {
   - Uses `mergeMap` to store each source value via `provider.store()`
   - Returns the original item after successful storage and stream confirmation
   - Proper cleanup via provider's abort signal handling
-- **Testing Pattern**: Use cold observables (`of()`) instead of hot observables (`Subject`) to avoid timing issues with async provider initialization
+- **Observable Compatibility**: Works with all RxJS observable types:
+  - **Cold Observables** (`of()`, `from()`) - Immediate emission on subscription
+  - **Subject** - Hot observable, no initial value, no replay
+  - **BehaviorSubject** - Hot observable with initial value
+  - **ReplaySubject** - Hot observable that buffers and replays values
+  - **AsyncSubject** - Only emits the final value when completed
+- **Testing Patterns**:
+  - **Cold Observables**: Use `of()` for simple, predictable test scenarios
+  - **Hot Observables**: Wait for provider initialization with `await firstValueFrom(provider$)` before creating subjects
+  - **Timing Control**: Use `setTimeout()` for async emissions in hot observable tests
+  - **Proper Cleanup**: Always call `subject.complete()` to prevent memory leaks
 
 ## Development Commands
 
@@ -99,7 +109,11 @@ npm run build             # Build for production
 - Use `RetryError` for recoverable errors (network issues, resource not ready)
 - Use `FatalError` for unrecoverable errors (configuration problems)
 - Always include error context in messages
-- **Error Checking Strategy**: Don't do conditional error logic handling on "error.message" - use "error.name" for deterministic error type checking
+- **Error Checking Strategy**: 
+  - NEVER do conditional error logic handling on "error.message" - use "error.name" for deterministic error type checking
+  - Use native `AbortError` for abort operations - don't manufacture new Error objects
+  - Pass through original `signal.reason` to preserve native error types
+  - Handle AbortError as debug-level logging (normal shutdown) vs error-level for actual errors
 
 ### Observable Patterns
 
@@ -121,6 +135,17 @@ npm run build             # Build for production
 - Use short but descriptive names for tests (e.g., 'multiple-streams', 'only-once', 'shard-observation')
 - Always clean up resources properly in test teardown
 - NEVER skip tests in CI environments - ensure all tests can run successfully in CI
+
+#### RxJS Operator Testing Best Practices
+
+- **Cold vs Hot Observable Testing**: 
+  - Use cold observables (`of()`, `from()`) for simple, deterministic tests
+  - Use hot observables (Subjects) to test real-world streaming scenarios
+- **Provider Initialization**: For hot observable tests, always wait for provider initialization before creating subjects
+- **Timing Control**: Use `setTimeout()` with appropriate delays for async operations in tests
+- **Memory Management**: Always complete subjects and observables to prevent memory leaks
+- **Error Scenarios**: Test both normal shutdown (AbortError) and actual error conditions
+- **Subject Type Coverage**: Test with multiple RxJS subject types to ensure broad compatibility
 
 ## Testing Notes
 
@@ -224,6 +249,35 @@ npm run build             # Build for production
 2. **Memory Management**: Monitor memory usage in production; current singleton pattern is acceptable for typical use cases
 3. **Signal Testing**: Always test abort signal propagation with multiple instances to ensure proper cascade behavior
 4. **Error Handling**: Continue distinguishing between `RetryError` and `FatalError` for appropriate error recovery strategies
+
+## Recent Session Learnings (2025-06-22)
+
+### `persistTo` Operator Development & Testing
+
+- **Issue**: RxJS operator needed comprehensive testing across different observable types
+- **Solution**: Created test suite covering cold observables, Subject, BehaviorSubject, ReplaySubject, and AsyncSubject
+- **Key Insights**:
+  - Cold observables work immediately without timing concerns
+  - Hot observables require provider initialization before creating subjects
+  - Each subject type has distinct emission patterns that need specific test approaches
+  - Proper cleanup (subject.complete()) is essential for memory management
+
+### Error Handling & AbortSignal Improvements
+
+- **Issue**: "Provider aborted" errors were manufacturing new Error objects instead of preserving native AbortError
+- **Root Cause**: Code was creating `new Error('Provider aborted')` instead of passing through `signal.reason`
+- **Solution**: 
+  - Modified abort handlers to pass through original `signal.reason`
+  - Updated error checking logic to use `error.name !== 'AbortError'` exclusively
+  - Removed custom AbortError class in favor of native browser AbortError
+- **Best Practice**: Always preserve native error types through the error propagation chain
+
+### Log Message Cleanup
+
+- **Issue**: Scary error messages appeared during normal test cleanup
+- **Solution**: Distinguished between normal shutdown (AbortError) and actual errors
+- **Implementation**: Use debug-level logging for AbortError, error-level for actual problems
+- **Result**: Clean test output without losing important error information
 
 ## Session Learnings and Recommendations
 

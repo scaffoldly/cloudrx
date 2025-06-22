@@ -110,10 +110,10 @@ export abstract class CloudProvider<TEvent>
       .subscribe();
 
     opts.signal.addEventListener('abort', () => {
-      this.abort(new Error('Provider aborted from global signal'));
+      this.abort(opts.signal.reason);
       // Cancel all streams for this provider
       if (CloudProvider.streams[id]) {
-        CloudProvider.streams[id].stop(new Error('Provider aborted'));
+        CloudProvider.streams[id].stop(opts.signal.reason);
         delete CloudProvider.streams[id];
       }
       store.unsubscribe();
@@ -122,7 +122,7 @@ export abstract class CloudProvider<TEvent>
     // When provider aborts, abort any active streams
     CloudProvider.aborts[id].signal.addEventListener('abort', () => {
       if (CloudProvider.streams[id]) {
-        CloudProvider.streams[id].stop(new Error('Provider aborted'));
+        CloudProvider.streams[id].stop(CloudProvider.aborts[id]?.signal.reason);
         delete CloudProvider.streams[id];
       }
     });
