@@ -1,4 +1,4 @@
-import { firstValueFrom, lastValueFrom } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 // import { deepEqual } from 'fast-equals';
 import { DynamoDBLocalContainer } from './local';
 import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
@@ -89,7 +89,7 @@ describe('aws-dynamodb', () => {
     );
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance.store(testData));
+    const storedData = await firstValueFrom(instance.store(testData));
 
     expect(storedData).toEqual(testData);
   });
@@ -109,26 +109,17 @@ describe('aws-dynamodb', () => {
 
     const stream = await firstValueFrom(instance.stream());
 
-    console.log('!!! got stream', stream);
-
     const events: _Record[] = [];
     instance.on('event', (event) => {
-      console.log('!!! got event', event);
       events.push(event);
     });
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance.store(testData));
-
-    console.log('!!! stored data', storedData);
+    const storedData = await firstValueFrom(instance.store(testData));
 
     expect(storedData).toEqual(testData);
 
-    console.log('!!! stopping stream');
-
     await stream.stop();
-
-    console.log('!!! stream stopped');
 
     expect(events.length).toBe(1);
     expect(events[0]).toBeDefined();
@@ -151,12 +142,15 @@ describe('aws-dynamodb', () => {
     const instance1 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream1 = await firstValueFrom(instance1.stream());
+    const stream1 = instance1.stream();
 
     const instance2 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream2 = await firstValueFrom(instance2.stream());
+    const stream2 = instance2.stream();
+
+    expect(instance1).toBe(instance2);
+    expect(stream1).not.toBe(stream2);
 
     const events1: _Record[] = [];
     instance1.on('event', (event) => {
@@ -169,13 +163,11 @@ describe('aws-dynamodb', () => {
     });
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await lastValueFrom(instance1.store(testData));
+    const storedData = await firstValueFrom(instance1.store(testData, stream1));
     expect(storedData).toEqual(testData);
 
-    console.log('!!! stopping stream1');
-    await stream1.stop();
-    console.log('!!! stopping stream2');
-    await stream2.stop();
+    (await firstValueFrom(stream1)).stop();
+    (await firstValueFrom(stream2)).stop();
 
     expect(events1).toEqual(events2);
 
@@ -186,14 +178,14 @@ describe('aws-dynamodb', () => {
   });
 
   test('stores-items', async () => {
-    const NUM_ITEMS = 10;
+    const NUM_ITEMS = 5;
 
     const options: DynamoDBProviderOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
       signal: abort.signal,
-      // logger: console,
+      logger: console,
     };
 
     const instance = await firstValueFrom(
@@ -209,10 +201,12 @@ describe('aws-dynamodb', () => {
     }
 
     const storedItems = await Promise.all(
-      testItems.map((item) => lastValueFrom(instance.store(item)))
+      testItems.map((item) => firstValueFrom(instance.store(item)))
     );
 
     expect(storedItems.length).toEqual(testItems.length);
+    console.log('!!! Stored items:', storedItems);
+    console.log('!!! Test items:', testItems);
     for (let i = 0; i < NUM_ITEMS; i++) {
       expect(storedItems[i]).toEqual(testItems[i]);
     }

@@ -200,7 +200,7 @@ export abstract class CloudProvider<TEvent>
           // This allows the underlying implementation to establish its position
           Promise.resolve().then(() => {
             this.logger.debug(
-              `[${this.id}] Emitting start event for existing stream`
+              `[${this.id}] Emitting start event for new stream`
             );
             setTimeout(() => controller!.emit('start'), 100);
           });

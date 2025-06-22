@@ -147,10 +147,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               abortSignal: signal,
             })
             .then((response) => {
-              this.logger.debug(
-                `[${this.id}] Stream description successful, shards:`,
-                response.StreamDescription?.Shards?.length || 0
-              );
               return response.StreamDescription?.Shards || [];
             })
             .catch((error) => {
@@ -231,15 +227,12 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               )
               .then((response) => {
                 if (!response.ShardIterator) {
-                  this.logger.error(
+                  this.logger.warn(
                     `[${this.id}] No ShardIterator returned for shard:`,
                     shard.ShardId
                   );
                   return null;
                 }
-                this.logger.debug(
-                  `[${this.id}] Got shard iterator successfully`
-                );
                 return response.ShardIterator;
               })
               .catch((error) => {
@@ -266,10 +259,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
         )
       ),
       concatMap((position) => {
-        this.logger.debug(
-          `[${this.id}] Getting records with iterator`,
-          position
-        );
         return from(
           this.streamClient
             .send(new GetRecordsCommand({ ShardIterator: position }), {
@@ -282,37 +271,6 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
               this.logger.debug(
                 `[${this.id}] GetRecords response: ${records.length} records, nextIterator: ${!!nextShardIterator}`
               );
-
-              if (records.length > 0) {
-                this.logger.debug(`[${this.id}] Records details:`);
-                records.forEach((record, i) => {
-                  this.logger.debug(`[${this.id}] Record ${i}:`, {
-                    eventID: record.eventID,
-                    eventName: record.eventName,
-                    eventSource: record.eventSource,
-                    eventVersion: record.eventVersion,
-                    awsRegion: record.awsRegion,
-                    dynamodb: {
-                      ApproximateCreationDateTime:
-                        record.dynamodb?.ApproximateCreationDateTime,
-                      Keys: record.dynamodb?.Keys,
-                      SequenceNumber: record.dynamodb?.SequenceNumber,
-                      SizeBytes: record.dynamodb?.SizeBytes,
-                      StreamViewType: record.dynamodb?.StreamViewType,
-                      NewImage: record.dynamodb?.NewImage
-                        ? 'present'
-                        : 'absent',
-                      OldImage: record.dynamodb?.OldImage
-                        ? 'present'
-                        : 'absent',
-                    },
-                  });
-                });
-              } else {
-                this.logger.debug(
-                  `[${this.id}] No records returned from GetRecords`
-                );
-              }
 
               if (nextShardIterator) {
                 this.logger.debug(
