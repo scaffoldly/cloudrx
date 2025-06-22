@@ -205,7 +205,12 @@ export abstract class CloudProvider<TEvent>
     );
 
     controller.on('error', (error) => {
-      this.logger.error(`[${this.id}] Stream error:`, error);
+      // Don't log AbortError as they're part of normal shutdown
+      if (error.name !== 'AbortError') {
+        this.logger.error(`[${this.id}] Stream error:`, error);
+      } else {
+        this.logger.debug(`[${this.id}] Stream stopped due to abort signal`);
+      }
     });
 
     controller.on('stop', () => {

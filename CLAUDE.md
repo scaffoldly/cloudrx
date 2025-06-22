@@ -4,6 +4,42 @@
 
 CloudRx is a TypeScript library for streaming cloud provider events using RxJS. It provides reactive interfaces for cloud services like DynamoDB Streams.
 
+## Usage Examples
+
+### Basic DynamoDB Streaming with `persistTo`
+
+```typescript
+import { of } from 'rxjs';
+import { DynamoDBProvider, persistTo } from 'cloudrx';
+
+// Create provider configuration
+const options = {
+  client: dynamoDbClient,
+  hashKey: 'id',
+  rangeKey: 'timestamp',
+  signal: abortController.signal,
+};
+
+// Create provider observable
+const provider$ = DynamoDBProvider.from('my-table', options);
+
+// Data to persist
+const data = [
+  { message: 'hello', timestamp: Date.now() },
+  { message: 'world', timestamp: Date.now() + 1 }
+];
+
+// Persist data and get it back from the stream
+const result$ = of(...data).pipe(
+  persistTo(provider$)
+);
+
+// Subscribe to get confirmed stored items
+result$.subscribe(item => {
+  console.log('Item stored and confirmed:', item);
+});
+```
+
 ## Key Architecture Components
 
 ### CloudProvider Abstract Class (`src/providers/index.ts`)
@@ -19,6 +55,19 @@ CloudRx is a TypeScript library for streaming cloud provider events using RxJS. 
 - **Shard Polling**: Configurable interval (default 5000ms) with error handling
 - **Configuration**: TTL attribute configurable (default 'expires')
 - **Resource Cleanup**: Proper subscription management with abort signals
+
+### RxJS Operators (`src/operators/`)
+
+#### `persistTo` Operator
+
+- **Purpose**: Stores items to a cloud provider and waits for them to appear back in the stream
+- **Usage**: `source$.pipe(persistTo(provider$))`
+- **Key Features**:
+  - Handles async provider initialization with `first()` operator
+  - Uses `mergeMap` to store each source value via `provider.store()`
+  - Returns the original item after successful storage and stream confirmation
+  - Proper cleanup via provider's abort signal handling
+- **Testing Pattern**: Use cold observables (`of()`) instead of hot observables (`Subject`) to avoid timing issues with async provider initialization
 
 ## Development Commands
 
@@ -50,6 +99,7 @@ npm run build             # Build for production
 - Use `RetryError` for recoverable errors (network issues, resource not ready)
 - Use `FatalError` for unrecoverable errors (configuration problems)
 - Always include error context in messages
+- **Error Checking Strategy**: Don't do conditional error logic handling on "error.message" - use "error.name" for deterministic error type checking
 
 ### Observable Patterns
 
