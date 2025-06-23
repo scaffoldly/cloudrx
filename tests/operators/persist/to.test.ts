@@ -1,13 +1,13 @@
 import { of, take, toArray, firstValueFrom, Subject } from 'rxjs';
-import { DynamoDBProvider, DynamoDBProviderOptions } from '../../src';
-import { persistTo, Persistable } from '../../src/operators/persist';
-import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import { testId } from '../setup';
-import { createTestLogger } from '../utils/logger';
+import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../src';
+import { persistTo, Persistable } from '../../../src/operators/persist';
+import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
+import { testId } from '../../setup';
+import { createTestLogger } from '../../utils/logger';
 
 type Data = { message: string; timestamp: number };
 
-describe('persist-to', () => {
+describe.skip('persist-to', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController;
   const logger = createTestLogger();

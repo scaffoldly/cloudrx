@@ -8,8 +8,10 @@ import {
   map,
   Observable,
   observeOn,
+  of,
   share,
   Subject,
+  Subscription,
   switchMap,
   takeUntil,
   tap,
@@ -20,31 +22,72 @@ import { Logger, NoOpLogger } from '..';
 export type CloudProviderOptions = {
   signal: AbortSignal;
   logger?: Logger;
+  replayOnSubscribe?: boolean;
   pollInterval?: number;
 };
 
-export class StreamController extends EventEmitter<{
+export class StreamController<TEvent> extends EventEmitter<{
   start: [];
   stop: [];
   error: [Error];
+  event: [TEvent];
 }> {
-  public readonly signal: AbortSignal;
+  private _subscription?: Subscription;
+  private readonly logger: Logger;
+  private readonly id: string;
+  private abortController: AbortController = new AbortController();
 
-  constructor(private abort: AbortController) {
+  constructor(provider: CloudProvider<TEvent>) {
     super({ captureRejections: true });
-    this.signal = abort.signal;
+    this.id = `${provider.id}-stream`;
+    this.logger = provider.logger;
+
+    provider.signal.addEventListener('abort', async () => {
+      this.abortController.abort(provider.signal.reason);
+      this.emit('error', provider.signal.reason);
+    });
+
+    this.on('error', async (error) => {
+      await this.stop();
+      const isAbortError =
+        (error as Error)?.name === 'AbortError' ||
+        (typeof error === 'string' && (error as string).includes('aborted'));
+
+      if (isAbortError) {
+        this.logger.debug(
+          `[${this.id}] Stream controller stopped due to abort`
+        );
+      } else {
+        this.logger.error(`[${this.id}] Stream controller error:`, error);
+      }
+    });
   }
 
-  public stop(reason?: Error): Promise<void> {
-    return new Promise<void>((resolve) => {
-      this.signal.addEventListener('abort', () => {
-        if (reason) {
-          this.emit('error', reason);
-        }
-        this.emit('stop');
+  get signal(): AbortSignal {
+    return this.abortController.signal;
+  }
+
+  public start(subscription: Subscription): Promise<void> {
+    this._subscription = subscription;
+    return new Promise((resolve) => {
+      this.once('start', () => {
+        this.logger.debug(`[${this.id}] Stream controller started`);
         resolve();
       });
-      this.abort.abort(reason);
+      this.emit('start');
+    });
+  }
+
+  public stop(): Promise<void> {
+    this._subscription?.unsubscribe();
+    delete this._subscription;
+    this.abortController.abort('Stream stopped');
+    return new Promise((resolve) => {
+      this.once('stop', () => {
+        this.logger.debug(`[${this.id}] Stream controller stopped`);
+        resolve();
+      });
+      this.emit('stop');
     });
   }
 }
@@ -61,8 +104,11 @@ export type Streamed<T, Marker> = T & {
 export interface ICloudProvider<TEvent> {
   abort(reason?: unknown): void;
   unmarshall<T>(event: TEvent): Streamed<T, unknown>;
-  stream(all?: boolean): Observable<StreamController>;
-  store<T>(item: T, controller?: Observable<StreamController>): Observable<T>;
+  stream(): Observable<StreamController<TEvent>>;
+  store<T>(
+    item: T,
+    controller?: Observable<StreamController<TEvent>>
+  ): Observable<T>;
 }
 
 /**
@@ -70,32 +116,30 @@ export interface ICloudProvider<TEvent> {
  * Implementations must provide initialization and streaming logic.
  * @template TEvent The type of events this provider emits
  */
-export abstract class CloudProvider<TEvent>
-  extends EventEmitter<{
-    event: [TEvent];
-  }>
-  implements ICloudProvider<TEvent>
-{
+export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
   private _logger: Logger;
-  public static readonly aborts: Record<string, AbortController> = {};
-  private static readonly streams: Record<string, StreamController> = {};
+  private streamController?: StreamController<TEvent>;
+  private abortController = new AbortController();
+
   private store$ = new Subject<() => Observable<void>>();
+  private storeSubscription?: Subscription;
 
   protected constructor(
-    protected readonly id: string,
+    public readonly id: string,
     protected readonly opts: CloudProviderOptions
   ) {
-    super({ captureRejections: true });
     this._logger = opts.logger || new NoOpLogger();
 
     if (!id || typeof id !== 'string') {
       throw new Error('CloudProvider id must be a non-empty string');
     }
 
-    CloudProvider.aborts[id] = new AbortController();
+    opts.signal.addEventListener('abort', () => {
+      this.abort(opts.signal.reason);
+    });
 
     // Set up the RxJS-based store queue processor
-    const store = this.store$
+    this.storeSubscription = this.store$
       .pipe(
         concatMap((operation) =>
           operation().pipe(
@@ -108,36 +152,24 @@ export abstract class CloudProvider<TEvent>
         takeUntil(fromEvent(opts.signal, 'abort'))
       )
       .subscribe();
-
-    opts.signal.addEventListener('abort', () => {
-      this.abort(opts.signal.reason);
-      // Cancel all streams for this provider
-      if (CloudProvider.streams[id]) {
-        CloudProvider.streams[id].stop(opts.signal.reason);
-        delete CloudProvider.streams[id];
-      }
-      store.unsubscribe();
-    });
-
-    // When provider aborts, abort any active streams
-    CloudProvider.aborts[id].signal.addEventListener('abort', () => {
-      if (CloudProvider.streams[id]) {
-        CloudProvider.streams[id].stop(CloudProvider.aborts[id]?.signal.reason);
-        delete CloudProvider.streams[id];
-      }
-    });
   }
 
-  protected get logger(): Logger {
+  get logger(): Logger {
     return this._logger;
   }
 
-  private get signal(): AbortSignal {
-    return CloudProvider.aborts[this.id]!.signal;
+  get signal(): AbortSignal {
+    return this.abortController.signal;
   }
 
-  public abort(reason?: unknown): void {
-    CloudProvider.aborts[this.id]?.abort(reason);
+  public abort(reason: unknown): void {
+    this.abortController.abort(reason);
+    this.storeSubscription?.unsubscribe();
+    delete this.storeSubscription;
+    this.streamController?.stop().then(() => {
+      this.logger.debug(`[${this.id}] Stream controller stopped due to abort`);
+    });
+    delete this.streamController;
   }
 
   /**
@@ -152,10 +184,7 @@ export abstract class CloudProvider<TEvent>
    * @param all Whether to start from oldest (TRIM_HORIZON) or latest (LATEST) events
    * @returns Observable of event arrays. Empty arrays will be delayed automatically.
    */
-  protected abstract _stream(
-    controller: StreamController,
-    all?: boolean
-  ): Observable<TEvent[]>;
+  protected abstract _stream(all: boolean): Observable<TEvent[]>;
 
   /**
    * Unmarshall a raw event into a typed object.
@@ -179,70 +208,27 @@ export abstract class CloudProvider<TEvent>
    * @param all Whether to stream all events from the beginning (TRIM_HORIZON) or only new events (LATEST)
    * @returns Controller for the shared stream
    */
-  public stream(all: boolean = false): Observable<StreamController> {
-    let controller = CloudProvider.streams[this.id];
-
-    if (controller) {
+  public stream(): Observable<StreamController<TEvent>> {
+    if (this.streamController) {
       this.logger.debug(`[${this.id}] Reusing existing stream controller`);
-      return new Observable<StreamController>((subscriber) => {
-        subscriber.next(controller!);
-        subscriber.complete();
-        // For existing streams, emit start event after a microtask to indicate readiness
-        // Promise.resolve().then(() => {
-        //   this.logger.debug(
-        //     `[${this.id}] Emitting start event for existing stream`
-        //   );
-        //   setTimeout(() => controller!.emit('start'), 100);
-        // });
-      });
+      return of(this.streamController);
     }
 
     this.logger.debug(`[${this.id}] Creating new stream controller`);
-    const streamAbort = new AbortController();
 
     let started = false;
+    let subscription: Subscription | undefined;
 
-    controller = CloudProvider.streams[this.id] = new StreamController(
-      streamAbort
-    );
+    this.streamController = new StreamController(this);
+    const all = this.opts.replayOnSubscribe ?? false;
 
-    controller.on('error', (error) => {
-      // Don't log AbortError as they're part of normal shutdown
-      if (error.name !== 'AbortError') {
-        this.logger.error(`[${this.id}] Stream error:`, error);
-      } else {
-        this.logger.debug(`[${this.id}] Stream stopped due to abort signal`);
-      }
-    });
-
-    controller.on('stop', () => {
-      this.logger.debug(`[${this.id}] Stream stopped`);
-      delete CloudProvider.streams[this.id];
-    });
-
-    const shared = this._stream(controller, all).pipe(
+    const sharedStream = this._stream(all).pipe(
+      takeUntil(fromEvent(this.signal, 'abort')),
       observeOn(asyncScheduler),
-      takeUntil(fromEvent(streamAbort.signal, 'abort')),
-      tap((events) => {
+      tap(() => {
         if (!started) {
           started = true;
-          this.logger.debug(
-            `[${this.id}] Stream first batch processed, scheduling start event`
-          );
-          // Emit start event after a microtask to ensure stream is positioned
-          // This allows the underlying implementation to establish its position
-          Promise.resolve().then(() => {
-            this.logger.debug(
-              `[${this.id}] Emitting start event for new stream`
-            );
-            setTimeout(() => controller!.emit('start'), 100);
-          });
-        }
-
-        if (events.length > 0) {
-          events.forEach((event) => {
-            this.emit('event', event);
-          });
+          this.streamController?.start(subscription!);
         }
       }),
       share({
@@ -252,22 +238,40 @@ export abstract class CloudProvider<TEvent>
       })
     );
 
-    shared.subscribe({
+    subscription = sharedStream.subscribe({
+      next: (events) => {
+        this.logger.debug(
+          `[${this.id}] Stream emitted ${events.length} events`
+        );
+        events.forEach((event) => {
+          this.streamController?.emit('event', event);
+        });
+      },
       error: async (error) => {
-        this.logger.error(`[${this.id}] Stream error:`, error);
+        this.logger.error(`[${this.id}] Stream subscription error:`, error);
         started = false;
-        await controller.stop(error);
+        this.streamController?.stop().then(() => {
+          this.logger.debug(
+            `[${this.id}] Stream controller stopped due to stream error`
+          );
+        });
+        delete this.streamController;
       },
       complete: async () => {
-        this.logger.debug(`[${this.id}] Stream completed`);
+        this.logger.debug(`[${this.id}] Stream subscription completed`);
         started = false;
-        await controller.stop();
+        this.streamController?.stop().then(() => {
+          this.logger.debug(
+            `[${this.id}] Stream controller stopped on stream completion`
+          );
+        });
+        delete this.streamController;
       },
     });
 
-    return new Observable<StreamController>((subscriber) => {
+    return new Observable<StreamController<TEvent>>((subscriber) => {
       this.logger.debug(`[${this.id}] Emitting new stream controller`);
-      subscriber.next(controller);
+      subscriber.next(this.streamController!);
       subscriber.complete();
     });
   }
@@ -278,12 +282,9 @@ export abstract class CloudProvider<TEvent>
    * @param controller Optional stream controller to use for listening. If not provided, creates or reuses existing stream.
    * @returns Observable that emits the item when it appears in the stream
    */
-  public store<T>(
-    item: T,
-    controller?: Observable<StreamController>
-  ): Observable<T> {
+  public store<T>(item: T): Observable<T> {
     // Use provided stream controller or create/get one
-    const controller$ = controller || this.stream();
+    const controller$ = this.stream();
 
     return controller$.pipe(
       switchMap((controller) => {
@@ -294,7 +295,7 @@ export abstract class CloudProvider<TEvent>
 
           const cleanup = (): void => {
             if (eventHandler) {
-              this.off('event', eventHandler);
+              controller.off('event', eventHandler);
             }
           };
 
@@ -304,7 +305,7 @@ export abstract class CloudProvider<TEvent>
               tap((matcherFn) => {
                 if (!isCompleted) {
                   matcher = matcherFn;
-                  this.on('event', eventHandler);
+                  controller.on('event', eventHandler);
                 }
               }),
               map(() => void 0), // Convert to Observable<void>

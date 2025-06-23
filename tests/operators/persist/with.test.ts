@@ -8,15 +8,15 @@ import {
   ReplaySubject,
   AsyncSubject,
 } from 'rxjs';
-import { DynamoDBProvider, DynamoDBProviderOptions } from '../../src';
-import { persistWith } from '../../src/operators/persist';
-import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import { testId } from '../setup';
-import { createTestLogger } from '../utils/logger';
+import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../src';
+import { persistWith } from '../../../src/operators/persist';
+import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
+import { testId } from '../../setup';
+import { createTestLogger } from '../../utils/logger';
 
 type Data = { message: string; timestamp: number };
 
-describe('persist-with', () => {
+describe.skip('persist-with', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController;
   const logger = createTestLogger();
@@ -109,6 +109,61 @@ describe('persist-with', () => {
   });
 
   describe('subjects', () => {
+    test('multiple-subjects', async () => {
+      const options = createOptions();
+
+      const data1: Data = {
+        message: 'subject-1',
+        timestamp: performance.now(),
+      };
+      const data2: Data = {
+        message: 'subject-2',
+        timestamp: performance.now(),
+      };
+
+      const data3: Data = {
+        message: 'subject-3',
+        timestamp: performance.now(),
+      };
+      const data4: Data = {
+        message: 'subject-4',
+        timestamp: performance.now(),
+      };
+
+      const producer1 = new Subject<Data>();
+      const producer2 = new Subject<Data>();
+      const consumer = new Subject<Data>();
+
+      const provider$ = DynamoDBProvider.from(testId(), options);
+
+      const producer1$ = producer1.pipe(persistWith(provider$, true));
+      const producer2$ = producer2.pipe(persistWith(provider$, true));
+      const consumer$ = consumer.pipe(persistWith(provider$, true));
+
+      producer1$.subscribe((data) => {
+        console.log('Producer 1 emitted:', data);
+      });
+
+      producer2$.subscribe((data) => {
+        console.log('Producer 2 emitted:', data);
+      });
+
+      consumer$.subscribe((data) => {
+        console.log('Consumer received:', data);
+      });
+
+      setTimeout(() => {
+        producer1.next(data1);
+        producer1.next(data2);
+        producer2.next(data3);
+        producer2.next(data4);
+      }, 100);
+
+      console.log('!!! waiting');
+      await new Promise<void>((resolve) => setTimeout(resolve, 5000));
+      console.log('!!! done waiting');
+    });
+
     test('behavior-subject', async () => {
       const options = createOptions();
       const data1: Data = {

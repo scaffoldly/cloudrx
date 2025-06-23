@@ -123,7 +123,7 @@ describe('aws-dynamodb', () => {
     const stream = await firstValueFrom(instance.stream());
 
     const events: _Record[] = [];
-    instance.on('event', (event) => {
+    stream.on('event', (event) => {
       events.push(event);
     });
 
@@ -155,32 +155,34 @@ describe('aws-dynamodb', () => {
     const instance1 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream1 = instance1.stream();
+    const stream1$ = instance1.stream();
+    const stream1 = await firstValueFrom(stream1$);
 
     const instance2 = await firstValueFrom(
       DynamoDBProvider.from(testId(), options)
     );
-    const stream2 = instance2.stream();
+    const stream2$ = instance2.stream();
+    const stream2 = await firstValueFrom(stream2$);
 
     expect(instance1).toBe(instance2);
-    expect(stream1).not.toBe(stream2);
+    expect(stream1).toBe(stream2);
 
     const events1: _Record[] = [];
-    instance1.on('event', (event) => {
+    stream1.on('event', (event) => {
       events1.push(event);
     });
 
     const events2: _Record[] = [];
-    instance2.on('event', (event) => {
+    stream2.on('event', (event) => {
       events2.push(event);
     });
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
-    const storedData = await firstValueFrom(instance1.store(testData, stream1));
+    const storedData = await firstValueFrom(instance1.store(testData));
     expect(storedData).toEqual(testData);
 
-    (await firstValueFrom(stream1)).stop();
-    (await firstValueFrom(stream2)).stop();
+    await stream1.stop();
+    await stream2.stop();
 
     expect(events1).toEqual(events2);
 
@@ -366,7 +368,7 @@ describe('aws-dynamodb', () => {
     (provider as any)._streamClient = mockStreamClient;
 
     const emittedShards: Shard[] = [];
-    const subscription = provider.getShards(abort.signal).subscribe((shard) => {
+    const subscription = provider.getShards().subscribe((shard) => {
       emittedShards.push(shard);
     });
 

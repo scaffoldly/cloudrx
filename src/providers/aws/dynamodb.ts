@@ -13,7 +13,6 @@ import {
   CloudProviderOptions,
   FatalError,
   RetryError,
-  StreamController,
   Streamed,
 } from '../base';
 import {
@@ -128,7 +127,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return this.opts.ttlAttribute || 'expires';
   }
 
-  public getShards(signal: AbortSignal): Observable<Shard> {
+  public getShards(): Observable<Shard> {
     const { id } = this;
 
     if (DynamoDBProvider.shards[id]) {
@@ -137,9 +136,9 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     }
 
     DynamoDBProvider.shards[id] = timer(0, this.opts.pollInterval || 5000).pipe(
-      takeUntil(fromEvent(signal, 'abort')),
-      switchMap(() => {
-        this.logger.debug(`[${this.id}] Attempting to describe stream...`);
+      takeUntil(fromEvent(this.signal, 'abort')),
+      switchMap((tick) => {
+        this.logger.debug(`[${this.id}] [iter:${tick}] Stream refresh...`);
         return from(
           this.streamClient
             .send(new DescribeStreamCommand({ StreamArn: this.streamArn }))
@@ -195,20 +194,17 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     return DynamoDBProvider.instances[id];
   }
 
-  protected _stream(
-    controller: StreamController,
-    all: boolean = false
-  ): Observable<_Record[]> {
-    const signal = controller.signal;
-
+  protected _stream(all: boolean): Observable<_Record[]> {
     const shardIteratorType = all ? 'TRIM_HORIZON' : 'LATEST';
+
     this.logger.debug(
       `[${this.id}] Starting _stream with ${shardIteratorType}, streamArn: ${this.streamArn}`
     );
+
     const shardIterator = new Subject<string>();
 
     // Create a local subscription to the shared shard observable
-    const shardSubscription = this.getShards(signal)
+    const shardSubscription = this.getShards()
       .pipe(
         // Process each shard
         switchMap((shard) => {
@@ -253,7 +249,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
 
     return shardIterator.pipe(
       takeUntil(
-        fromEvent(signal, 'abort').pipe(
+        fromEvent(this.signal, 'abort').pipe(
           tap(() => shardSubscription.unsubscribe())
         )
       ),
@@ -369,6 +365,29 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       if (error) {
         if (error instanceof FatalError || error instanceof RetryError) {
           throw error;
+        }
+
+        // Handle AggregateError from AWS SDK v3
+        if (
+          error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          error.name === 'AggregateError' &&
+          'errors' in error &&
+          Array.isArray(error.errors)
+        ) {
+          // Process the first error in the aggregate, or use the aggregate message
+          const firstError = error.errors[0];
+          if (
+            firstError &&
+            typeof firstError === 'object' &&
+            'name' in firstError
+          ) {
+            // Recursively handle the first underlying error
+            return assert(table, ttl, firstError as Error);
+          }
+          // If no processable errors, treat as fatal
+          throw new FatalError(`AggregateError: ${error.message}`);
         }
 
         // console.warn(chalk.yellow(`WARN: ${error.name}: ${error.message}`));
