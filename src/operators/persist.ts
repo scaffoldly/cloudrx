@@ -14,6 +14,14 @@ export type Persistable<T> = {
   source: Observable<T>;
 };
 
+/**
+ * RxJS operator that persists items to a cloud provider and waits for confirmation.
+ * @param provider An observable of a cloud provider
+ * @returns A MonoTypeOperatorFunction that stores each item and returns it after confirmation
+ * @example
+ * // Store items in DynamoDB and get them back when confirmed
+ * source$.pipe(persist(DynamoDB.from('my-table', options)))
+ */
 export const persist = <T>(
   provider: Observable<ICloudProvider<unknown> | undefined>
 ): MonoTypeOperatorFunction<T> => {

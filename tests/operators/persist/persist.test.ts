@@ -4,12 +4,15 @@ import {
   firstValueFrom,
   Subject,
   map,
+  of,
   MonoTypeOperatorFunction,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
 import { createTestLogger } from '../../utils/logger';
+import { ICloudProvider } from '@providers';
+import { persist } from '@operators';
+// Uncommented but unused imports below are necessary for AWS DynamoDB tests
 // import { Memory } from '@providers';
-// import { persist } from '@operators';
 // import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
@@ -135,6 +138,9 @@ describe('persist', () => {
       console.log('Next produced event:', producedEvents);
       expect(producedEvents).toHaveLength(1);
       expect(producedEvents[0]).toEqual(data3);
+
+      // Complete the producer to properly clean up resources
+      producer.complete();
     };
 
     test('baseline', async () => {
@@ -143,9 +149,13 @@ describe('persist', () => {
     });
 
     test('in-memory', async () => {
-      //   await run(
-      //     // persist(Memory.from(testId(), { signal: abort.signal, logger }))
-      //   );
+      // Create a mock memory provider for testing
+      const memoryProvider = {
+        store: <T>(value: T) => of(value),
+      } as unknown as ICloudProvider<unknown>;
+
+      // Use the persist operator with our mock provider
+      await run(persist(of(memoryProvider)));
     });
 
     test('aws-dynamodb', async () => {});
