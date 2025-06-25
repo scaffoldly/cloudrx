@@ -10,7 +10,7 @@ import {
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   CloudProvider,
-  CloudProviderOptions,
+  CloudOptions,
   FatalError,
   RetryError,
   Streamed,
@@ -50,7 +50,7 @@ import {
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 
-export type DynamoDBProviderOptions = CloudProviderOptions & {
+export type DynamoDBOptions = CloudOptions & {
   client: DynamoDBClient;
   hashKey: string;
   rangeKey: string;
@@ -66,13 +66,13 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-export class DynamoDBProvider extends CloudProvider<_Record> {
-  private static instances: Record<string, Observable<DynamoDBProvider>> = {};
+export class DynamoDB extends CloudProvider<_Record> {
+  // private static instances: Record<string, Observable<DynamoDBProvider>> = {};
   private static shards: Record<string, Observable<Shard>> = {};
 
   private client: DynamoDBDocumentClient;
   private _streamClient?: DynamoDBStreamsClient;
-  protected opts: DynamoDBProviderOptions;
+  protected opts: DynamoDBOptions;
 
   private _tableArn?: string;
   private _streamArn?: string;
@@ -84,7 +84,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     },
   };
 
-  protected constructor(id: string, options: DynamoDBProviderOptions) {
+  constructor(id: string, options: DynamoDBOptions) {
     super(id, options);
     this.client = DynamoDBDocumentClient.from(options.client, this.translation);
     this.opts = options;
@@ -130,12 +130,12 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
   public getShards(): Observable<Shard> {
     const { id } = this;
 
-    if (DynamoDBProvider.shards[id]) {
+    if (DynamoDB.shards[id]) {
       this.logger.debug(`[${this.id}] Returning existing shard observable`);
-      return DynamoDBProvider.shards[id];
+      return DynamoDB.shards[id];
     }
 
-    DynamoDBProvider.shards[id] = timer(0, this.opts.pollInterval || 5000).pipe(
+    DynamoDB.shards[id] = timer(0, this.opts.pollInterval || 5000).pipe(
       takeUntil(fromEvent(this.signal, 'abort')),
       switchMap((tick) => {
         this.logger.debug(`[${this.id}] [iter:${tick}] Stream refresh...`);
@@ -178,20 +178,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
       shareReplay(1)
     );
 
-    return DynamoDBProvider.shards[id];
-  }
-
-  static from(
-    id: string,
-    options: DynamoDBProviderOptions
-  ): Observable<DynamoDBProvider> {
-    if (!DynamoDBProvider.instances[id]) {
-      DynamoDBProvider.instances[id] = new DynamoDBProvider(id, options)
-        .init(options.signal)
-        .pipe(shareReplay(1));
-    }
-
-    return DynamoDBProvider.instances[id];
+    return DynamoDB.shards[id];
   }
 
   protected _stream(all: boolean): Observable<_Record[]> {
@@ -285,7 +272,7 @@ export class DynamoDBProvider extends CloudProvider<_Record> {
     );
   }
 
-  protected init(signal: AbortSignal): Observable<this> {
+  init(signal: AbortSignal): Observable<this> {
     this.logger.debug(`[${this.id}] Initializing DynamoDB provider...`);
     const describe$ = defer(() => {
       this.logger.debug(`[${this.id}] Describing existing table and TTL...`);

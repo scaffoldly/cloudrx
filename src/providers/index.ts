@@ -2,4 +2,5 @@
 export * from './base';
 
 // Export specific provider implementations
-export { DynamoDBProvider, DynamoDBProviderOptions } from './aws';
+export { DynamoDB, DynamoDBOptions } from './aws';
+export { Memory, MemoryOptions as MemoryProviderOptions } from './memory';

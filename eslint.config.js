@@ -15,6 +15,7 @@ module.exports = [
       'coverage-integration/**',
       '**/*.d.ts',
       'examples/*/node_modules/**',
+      'examples/**/*.ts',
     ],
   },
   

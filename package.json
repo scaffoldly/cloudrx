@@ -90,7 +90,12 @@
           "src/**/*.ts",
           "!src/**/*.d.ts"
         ],
-        "coverageDirectory": "coverage"
+        "coverageDirectory": "coverage",
+        "moduleNameMapper": {
+          "^@operators$": "<rootDir>/src/operators/index.ts",
+          "^@providers$": "<rootDir>/src/providers/index.ts",
+          "^@util$": "<rootDir>/src/util/index.ts"
+        }
       }
     ]
   }

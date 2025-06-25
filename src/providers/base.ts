@@ -1,4 +1,5 @@
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
+import EventEmitter from 'events';
 import {
   asyncScheduler,
   catchError,
@@ -10,21 +11,38 @@ import {
   observeOn,
   of,
   share,
+  shareReplay,
   Subject,
   Subscription,
   switchMap,
   takeUntil,
   tap,
 } from 'rxjs';
-import { EventEmitter } from 'events';
-import { Logger, NoOpLogger } from '..';
+import { Logger, NoOpLogger } from '@util';
 
-export type CloudProviderOptions = {
-  signal: AbortSignal;
-  logger?: Logger;
-  replayOnSubscribe?: boolean;
-  pollInterval?: number;
+/**
+ * Marker type for streamed events
+ * @template T The type of the streamed object
+ * @template Marker The type of the marker, to identify the location of the event in the stream
+ */
+export type Streamed<T, Marker> = T & {
+  __marker__?: Marker;
 };
+
+export interface ICloudProvider<TEvent> {
+  get id(): string;
+  get signal(): AbortSignal;
+  get logger(): Logger;
+
+  init(signal: AbortSignal): Observable<this>;
+  abort(reason?: unknown): void;
+  unmarshall<T>(event: TEvent): Streamed<T, unknown>;
+  stream(): Observable<StreamController<TEvent>>;
+  store<T>(
+    item: T,
+    controller?: Observable<StreamController<TEvent>>
+  ): Observable<T>;
+}
 
 export class StreamController<TEvent> extends EventEmitter<{
   start: [];
@@ -37,7 +55,7 @@ export class StreamController<TEvent> extends EventEmitter<{
   private readonly id: string;
   private abortController: AbortController = new AbortController();
 
-  constructor(provider: CloudProvider<TEvent>) {
+  constructor(provider: ICloudProvider<TEvent>) {
     super({ captureRejections: true });
     this.id = `${provider.id}-stream`;
     this.logger = provider.logger;
@@ -92,24 +110,12 @@ export class StreamController<TEvent> extends EventEmitter<{
   }
 }
 
-/**
- * Marker type for streamed events
- * @template T The type of the streamed object
- * @template Marker The type of the marker, to identify the location of the event in the stream
- */
-export type Streamed<T, Marker> = T & {
-  __marker__?: Marker;
+export type CloudOptions = {
+  signal: AbortSignal;
+  logger?: Logger;
+  replay?: boolean;
+  pollInterval?: number;
 };
-
-export interface ICloudProvider<TEvent> {
-  abort(reason?: unknown): void;
-  unmarshall<T>(event: TEvent): Streamed<T, unknown>;
-  stream(): Observable<StreamController<TEvent>>;
-  store<T>(
-    item: T,
-    controller?: Observable<StreamController<TEvent>>
-  ): Observable<T>;
-}
 
 /**
  * Abstract base class for cloud providers that stream events.
@@ -117,6 +123,8 @@ export interface ICloudProvider<TEvent> {
  * @template TEvent The type of events this provider emits
  */
 export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
+  private static instances = new Map<string, Observable<unknown>>();
+
   private _logger: Logger;
   private streamController?: StreamController<TEvent>;
   private abortController = new AbortController();
@@ -124,9 +132,27 @@ export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
   private store$ = new Subject<() => Observable<void>>();
   private storeSubscription?: Subscription;
 
-  protected constructor(
+  static from<
+    Options extends CloudOptions,
+    Provider extends ICloudProvider<unknown>,
+  >(
+    this: new (id: string, options: Options) => Provider,
+    id: string,
+    options: Options
+  ): Observable<Provider> {
+    if (!CloudProvider.instances.has(id)) {
+      const instance$ = new this(id, options)
+        .init(options.signal)
+        .pipe(shareReplay(1));
+      CloudProvider.instances.set(id, instance$);
+    }
+
+    return CloudProvider.instances.get(id) as Observable<Provider>;
+  }
+
+  constructor(
     public readonly id: string,
-    protected readonly opts: CloudProviderOptions
+    protected readonly opts: CloudOptions
   ) {
     this._logger = opts.logger || new NoOpLogger();
 
@@ -176,7 +202,7 @@ export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
    * Initialize the provider. Called once before streaming begins.
    * @returns Observable that emits this provider when ready
    */
-  protected abstract init(signal: AbortSignal): Observable<this>;
+  abstract init(signal: AbortSignal): Observable<this>;
 
   /**
    * Stream events from the provider.
@@ -220,7 +246,7 @@ export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
     let subscription: Subscription | undefined;
 
     this.streamController = new StreamController(this);
-    const all = this.opts.replayOnSubscribe ?? false;
+    const all = this.opts.replay ?? false;
 
     const sharedStream = this._stream(all).pipe(
       takeUntil(fromEvent(this.signal, 'abort')),
@@ -282,9 +308,12 @@ export abstract class CloudProvider<TEvent> implements ICloudProvider<TEvent> {
    * @param controller Optional stream controller to use for listening. If not provided, creates or reuses existing stream.
    * @returns Observable that emits the item when it appears in the stream
    */
-  public store<T>(item: T): Observable<T> {
+  public store<T>(
+    item: T,
+    controller?: Observable<StreamController<TEvent>>
+  ): Observable<T> {
     // Use provided stream controller or create/get one
-    const controller$ = this.stream();
+    const controller$ = controller || this.stream();
 
     return controller$.pipe(
       switchMap((controller) => {

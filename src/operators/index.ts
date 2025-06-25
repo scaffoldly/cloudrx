@@ -1,1 +1,1 @@
-export { persistTo } from './persist';
+export { persist } from './persist';

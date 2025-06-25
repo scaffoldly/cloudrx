@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { Logger } from '../../src';
+import { Logger } from '@util';
 
 /**
  * Creates a test logger that respects Jest's built-in flags

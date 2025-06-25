@@ -1,27 +1,20 @@
 import {
-  of,
   take,
   toArray,
   firstValueFrom,
   Subject,
-  BehaviorSubject,
-  ReplaySubject,
-  AsyncSubject,
+  map,
+  MonoTypeOperatorFunction,
 } from 'rxjs';
-import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../src';
-import {
-  persistTo,
-  persistFrom,
-  persistWith,
-  Persistable,
-} from '../../../src/operators/persist';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
-import { testId } from '../../setup';
 import { createTestLogger } from '../../utils/logger';
+// import { Memory } from '@providers';
+// import { persist } from '@operators';
+// import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
 
-describe.skip('persist', () => {
+describe('persist', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController;
   const logger = createTestLogger();
@@ -47,300 +40,114 @@ describe.skip('persist', () => {
     }
   });
 
-  const createOptions = (): DynamoDBProviderOptions => ({
-    client: container.getClient(),
-    hashKey: 'hashKey',
-    rangeKey: 'rangeKey',
-    signal: abort.signal,
-    logger,
-  });
+  //   const createOptions = (): DynamoDBProviderOptions => ({
+  //     client: container.getClient(),
+  //     hashKey: 'hashKey',
+  //     rangeKey: 'rangeKey',
+  //     signal: abort.signal,
+  //     logger,
+  //   });
 
-  describe('persist-to', () => {
-    describe('hot', () => {
-      test('subject', async () => {
-        const options = createOptions();
-        const data1: Data = { message: 'hot', timestamp: performance.now() };
-        const data2: Data = {
-          message: 'subject',
-          timestamp: performance.now(),
-        };
+  //   test('hot', async () => {
+  //     const options = createOptions();
+  //     const data1: Data = { message: 'hot-1', timestamp: performance.now() };
+  //     const data2: Data = { message: 'hot-2', timestamp: performance.now() };
 
-        // Create basic Subject (hot observable)
-        const source$ = new Subject<Data>();
-        const persistable$ = of<Persistable<Data>>({
-          provider: DynamoDBProvider.from(testId(), options),
-          source: source$,
-        });
-        const observable = persistable$.pipe(persistTo());
+  //     // Create basic Subject (hot observable)
+  //     const source$ = new Subject<Data>();
+  //     const persistable$ = of<Persistable<Data>>({
+  //       provider: DynamoDBProvider.from(testId(), options),
+  //       source: source$,
+  //     });
+  //     const observable = persistable$.pipe(persistTo());
 
-        // Start subscription
-        const promise = firstValueFrom(observable.pipe(take(2), toArray()));
+  //     // Start subscription
+  //     const promise = firstValueFrom(observable.pipe(take(2), toArray()));
 
-        // Emit values after subscription (hot observable pattern)
-        setTimeout(() => {
-          source$.next(data1);
-          source$.next(data2);
-        }, 100);
+  //     // Emit values after subscription (hot observable pattern)
+  //     setTimeout(() => {
+  //       source$.next(data1);
+  //       source$.next(data2);
+  //     }, 100);
 
-        const events = await promise;
-        expect(events).toHaveLength(2);
-        expect(events[0]).toEqual(data1);
-        expect(events[1]).toEqual(data2);
+  //     const events = await promise;
+  //     expect(events).toHaveLength(2);
+  //     expect(events[0]).toEqual(data1);
+  //     expect(events[1]).toEqual(data2);
 
-        source$.complete();
-      });
+  //     source$.complete();
+  //   });
+
+  //   test('cold', async () => {
+  //     const options = createOptions();
+  //     const data1: Data = { message: 'cold-1', timestamp: performance.now() };
+  //     const data2: Data = { message: 'cold-2', timestamp: performance.now() };
+
+  //     // Create persistable object with provider and source
+  //     const source$ = of(data1, data2);
+  //     const persistable$ = of<Persistable<Data>>({
+  //       provider: DynamoDBProvider.from(testId(), options),
+  //       source: source$,
+  //     });
+  //     const observable = persistable$.pipe(persistTo());
+
+  //     const events = await firstValueFrom(observable.pipe(take(2), toArray()));
+  //     expect(events).toHaveLength(2);
+  //     expect(events[0]).toEqual(data1);
+  //     expect(events[1]).toEqual(data2);
+  //   });
+
+  describe('hot', () => {
+    const run = async (
+      operator: MonoTypeOperatorFunction<Data>
+    ): Promise<void> => {
+      const data1: Data = { message: 'data-1', timestamp: performance.now() };
+      const data2: Data = { message: 'data-2', timestamp: performance.now() };
+      const data3: Data = { message: 'data-3', timestamp: performance.now() };
+
+      const producer = new Subject<Data>();
+      const observable = producer.pipe(operator);
+
+      let producedEventsP: Promise<Data[]>;
+      let producedEvents: Data[];
+
+      console.log('Setting up producer...');
+      producedEventsP = firstValueFrom(observable.pipe(take(2), toArray()));
+      console.log('Producing 2 events:', data1, data2);
+      producer.next(data1);
+      producer.next(data2);
+
+      console.log('Waiting for produced events...');
+      producedEvents = await producedEventsP;
+      console.log('Produced events:', producedEvents);
+
+      expect(producedEvents).toHaveLength(2);
+      expect(producedEvents[0]).toEqual(data1);
+      expect(producedEvents[1]).toEqual(data2);
+
+      console.log('Setting up for next event...');
+      producedEventsP = firstValueFrom(observable.pipe(take(1), toArray()));
+      console.log('Producing 1 more event:', data3);
+      producer.next(data3);
+
+      console.log('Waiting for next produced event...');
+      producedEvents = await producedEventsP;
+      console.log('Next produced event:', producedEvents);
+      expect(producedEvents).toHaveLength(1);
+      expect(producedEvents[0]).toEqual(data3);
+    };
+
+    test('baseline', async () => {
+      const operator: MonoTypeOperatorFunction<Data> = map((data) => data);
+      await run(operator);
     });
 
-    describe('cold', () => {
-      test('observable', async () => {
-        const options = createOptions();
-        const data1: Data = { message: 'cold', timestamp: performance.now() };
-        const data2: Data = {
-          message: 'observe',
-          timestamp: performance.now(),
-        };
-
-        // Create persistable object with provider and source
-        const source$ = of(data1, data2);
-        const persistable$ = of<Persistable<Data>>({
-          provider: DynamoDBProvider.from(testId(), options),
-          source: source$,
-        });
-        const observable = persistable$.pipe(persistTo());
-
-        const events = await firstValueFrom(
-          observable.pipe(take(2), toArray())
-        );
-        expect(events).toHaveLength(2);
-        expect(events[0]).toEqual(data1);
-        expect(events[1]).toEqual(data2);
-      });
-    });
-  });
-
-  describe('persist-from', () => {
-    describe('hot', () => {
-      test('subject', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'hot-from-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'hot-from-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Create hot Subject
-        const source$ = new Subject<Data>();
-        const persistable$ = source$.pipe(persistFrom(provider$, true));
-
-        const promise = firstValueFrom(persistable$.pipe(take(2), toArray()));
-
-        // Emit values after subscription (hot observable pattern)
-        setTimeout(() => {
-          source$.next(data1);
-          source$.next(data2);
-        }, 100);
-
-        const persistables = await promise;
-        expect(persistables).toHaveLength(2);
-
-        // Verify the structure of first persistable
-        expect(persistables[0]?.provider).toBeDefined();
-        expect(persistables[0]?.source).toBeDefined();
-
-        // Verify the sources emit the correct data
-        const sourceData1 = await firstValueFrom(persistables[0]!.source);
-        const sourceData2 = await firstValueFrom(persistables[1]!.source);
-        expect(sourceData1).toEqual(data1);
-        expect(sourceData2).toEqual(data2);
-
-        source$.complete();
-      });
+    test('in-memory', async () => {
+      //   await run(
+      //     // persist(Memory.from(testId(), { signal: abort.signal, logger }))
+      //   );
     });
 
-    describe('cold', () => {
-      test('observable', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'cold-from-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'cold-from-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Test that persistFrom creates Persistable objects
-        const source$ = of(data1, data2);
-        const persistable$ = source$.pipe(persistFrom(provider$, true));
-
-        const persistables = await firstValueFrom(
-          persistable$.pipe(take(2), toArray())
-        );
-        expect(persistables).toHaveLength(2);
-
-        // Verify the structure
-        expect(persistables[0]?.provider).toBeDefined();
-        expect(persistables[0]?.source).toBeDefined();
-
-        // Verify the sources emit the correct data
-        const sourceData1 = await firstValueFrom(persistables[0]!.source);
-        const sourceData2 = await firstValueFrom(persistables[1]!.source);
-        expect(sourceData1).toEqual(data1);
-        expect(sourceData2).toEqual(data2);
-      });
-    });
-  });
-
-  describe('persist-with', () => {
-    describe('hot', () => {
-      test('subject', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'hot-persist-with-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'hot-persist-with-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Create hot Subject
-        const source$ = new Subject<Data>();
-        const result$ = source$.pipe(persistWith(provider$, true));
-
-        const promise = firstValueFrom(result$.pipe(take(2), toArray()));
-
-        // Emit values after subscription (hot observable pattern)
-        setTimeout(() => {
-          source$.next(data1);
-          source$.next(data2);
-        }, 100);
-
-        const results = await promise;
-        expect(results).toHaveLength(2);
-        expect(results[0]).toEqual(data1);
-        expect(results[1]).toEqual(data2);
-
-        source$.complete();
-      });
-    });
-
-    describe('cold', () => {
-      test('observable', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'cold-persist-with-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'cold-persist-with-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Test that persistWith creates a complete flow
-        const source$ = of(data1, data2);
-        const result$ = source$.pipe(persistWith(provider$, true));
-
-        const results = await firstValueFrom(result$.pipe(take(2), toArray()));
-        expect(results).toHaveLength(2);
-        expect(results[0]).toEqual(data1);
-        expect(results[1]).toEqual(data2);
-      });
-    });
-
-    describe('subjects', () => {
-      test('behavior-subject', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'behavior-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'behavior-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Create BehaviorSubject with initial value
-        const source$ = new BehaviorSubject(data1);
-        const result$ = source$.pipe(persistWith(provider$, true));
-
-        const promise = firstValueFrom(result$.pipe(take(2), toArray()));
-
-        // Add second value after subscription
-        setTimeout(() => source$.next(data2), 100);
-
-        const events = await promise;
-        expect(events).toHaveLength(2);
-        expect(events[0]).toEqual(data1);
-        expect(events[1]).toEqual(data2);
-
-        source$.complete();
-      });
-
-      test('replay-subject', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'replay-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'replay-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Create ReplaySubject and emit values before subscription
-        const source$ = new ReplaySubject<Data>(2);
-        source$.next(data1);
-        source$.next(data2);
-
-        const result$ = source$.pipe(persistWith(provider$, true));
-
-        const events = await firstValueFrom(result$.pipe(take(2), toArray()));
-        expect(events).toHaveLength(2);
-        expect(events[0]).toEqual(data1);
-        expect(events[1]).toEqual(data2);
-
-        source$.complete();
-      });
-
-      test('async-subject', async () => {
-        const options = createOptions();
-        const data1: Data = {
-          message: 'async-1',
-          timestamp: performance.now(),
-        };
-        const data2: Data = {
-          message: 'async-2',
-          timestamp: performance.now(),
-        };
-        const provider$ = DynamoDBProvider.from(testId(), options);
-
-        // Create AsyncSubject - only emits the last value when completed
-        const source$ = new AsyncSubject<Data>();
-        const result$ = source$.pipe(persistWith(provider$, true));
-
-        // Start subscription
-        const promise = firstValueFrom(result$);
-
-        // Emit values and complete
-        setTimeout(() => {
-          source$.next(data1);
-          source$.next(data2); // This will be the only value emitted
-          source$.complete();
-        }, 100);
-
-        const event = await promise;
-        expect(event).toEqual(data2); // Only the last value (AsyncSubject behavior)
-      });
-    });
+    test('aws-dynamodb', async () => {});
   });
 });

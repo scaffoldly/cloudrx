@@ -3,8 +3,8 @@ import { firstValueFrom } from 'rxjs';
 import { DynamoDBLocalContainer } from './local';
 import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
 import { testId } from '../../../setup';
-import { DynamoDBProvider, DynamoDBProviderOptions } from '../../../../src';
 import { createTestLogger } from '../../../utils/logger';
+import { DynamoDB, DynamoDBOptions } from '@providers';
 
 describe('aws-dynamodb', () => {
   let container: DynamoDBLocalContainer;
@@ -37,7 +37,7 @@ describe('aws-dynamodb', () => {
   });
 
   test('is-a-singleton', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -45,8 +45,8 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance1$ = DynamoDBProvider.from(testId(), options);
-    const instance2$ = DynamoDBProvider.from(testId(), options);
+    const instance1$ = DynamoDB.from(testId(), options);
+    const instance2$ = DynamoDB.from(testId(), options);
 
     const instance1 = await firstValueFrom(instance1$);
     const instance2 = await firstValueFrom(instance2$);
@@ -57,7 +57,7 @@ describe('aws-dynamodb', () => {
   });
 
   test('sets-table-arn', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -65,15 +65,13 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
 
     expect(instance.tableArn).toBeDefined();
   });
 
   test('sets-stream-arn', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -81,15 +79,13 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
 
     expect(instance.streamArn).toBeDefined();
   });
 
   test('stores-an-item', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -97,9 +93,7 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
 
     const testData: Data = { message: 'test', timestamp: performance.now() };
     const storedData = await firstValueFrom(instance.store(testData));
@@ -108,7 +102,7 @@ describe('aws-dynamodb', () => {
   });
 
   test('streams-an-item', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -116,9 +110,7 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
 
     const stream = await firstValueFrom(instance.stream());
 
@@ -144,7 +136,7 @@ describe('aws-dynamodb', () => {
   });
 
   test('shadows-a-streamed-item', async () => {
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -152,15 +144,11 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance1 = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance1 = await firstValueFrom(DynamoDB.from(testId(), options));
     const stream1$ = instance1.stream();
     const stream1 = await firstValueFrom(stream1$);
 
-    const instance2 = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance2 = await firstValueFrom(DynamoDB.from(testId(), options));
     const stream2$ = instance2.stream();
     const stream2 = await firstValueFrom(stream2$);
 
@@ -195,7 +183,7 @@ describe('aws-dynamodb', () => {
   test('stores-items', async () => {
     const NUM_ITEMS = 10;
 
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -203,9 +191,7 @@ describe('aws-dynamodb', () => {
       logger,
     };
 
-    const instance = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
 
     const testItems: Data[] = [];
     for (let i = 0; i < NUM_ITEMS; i++) {
@@ -227,7 +213,7 @@ describe('aws-dynamodb', () => {
 
   test('global-abort-cascades', async () => {
     const testAbort = new AbortController();
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -237,13 +223,13 @@ describe('aws-dynamodb', () => {
 
     // Create multiple instances
     const instance1 = await firstValueFrom(
-      DynamoDBProvider.from(`${testId()}-1`, options)
+      DynamoDB.from(`${testId()}-1`, options)
     );
     const instance2 = await firstValueFrom(
-      DynamoDBProvider.from(`${testId()}-2`, options)
+      DynamoDB.from(`${testId()}-2`, options)
     );
     const instance3 = await firstValueFrom(
-      DynamoDBProvider.from(`${testId()}-3`, options)
+      DynamoDB.from(`${testId()}-3`, options)
     );
 
     const instances = [instance1, instance2, instance3];
@@ -351,7 +337,7 @@ describe('aws-dynamodb', () => {
         StreamDescription: { Shards: [shard1, shard2, shard3] },
       });
 
-    const options: DynamoDBProviderOptions = {
+    const options: DynamoDBOptions = {
       client: container.getClient(),
       hashKey: 'hashKey',
       rangeKey: 'rangeKey',
@@ -360,9 +346,7 @@ describe('aws-dynamodb', () => {
       pollInterval: 1000, // 1 second for faster testing
     };
 
-    const provider = await firstValueFrom(
-      DynamoDBProvider.from(testId(), options)
-    );
+    const provider = await firstValueFrom(DynamoDB.from(testId(), options));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (provider as any)._streamClient = mockStreamClient;
