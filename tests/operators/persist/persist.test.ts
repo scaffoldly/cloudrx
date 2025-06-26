@@ -11,9 +11,9 @@ import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
 import { createTestLogger } from '../../utils/logger';
 import { ICloudProvider } from '@providers';
 import { persist } from '@operators';
-// Uncommented but unused imports below are necessary for AWS DynamoDB tests
-// import { Memory } from '@providers';
-// import { testId } from '../../setup';
+// Import Memory provider for in-memory latency tests
+import { Memory } from '@providers';
+import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
 
@@ -148,7 +148,7 @@ describe('persist', () => {
       await run(operator);
     });
 
-    test('in-memory', async () => {
+    test('in-memory-mock', async () => {
       // Create a mock memory provider for testing
       const memoryProvider = {
         store: <T>(value: T) => of(value),
@@ -156,6 +156,40 @@ describe('persist', () => {
 
       // Use the persist operator with our mock provider
       await run(persist(of(memoryProvider)));
+    });
+    
+    test('in-memory-zero-latency', async () => {
+      // Create a memory provider with 0ms latency
+      const abortController = new AbortController();
+      const provider = new Memory(testId(), {
+        signal: abortController.signal,
+        logger,
+        latency: 0
+      });
+      
+      try {
+        // Use the persist operator with real provider but 0ms latency
+        await run(persist(provider.init(abortController.signal)));
+      } finally {
+        abortController.abort();
+      }
+    });
+    
+    test('in-memory-with-latency', async () => {
+      // Create a memory provider with 100ms latency - we don't use 1000ms for tests to keep them fast
+      const abortController = new AbortController();
+      const provider = new Memory(testId(), {
+        signal: abortController.signal,
+        logger,
+        latency: 100
+      });
+      
+      try {
+        // Use the persist operator with real provider and 100ms latency
+        await run(persist(provider.init(abortController.signal)));
+      } finally {
+        abortController.abort();
+      }
     });
 
     test('aws-dynamodb', async () => {});

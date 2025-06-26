@@ -8,11 +8,18 @@ import {
   takeUntil,
   tap,
   timer,
+  concatMap,
 } from 'rxjs';
 import { CloudProvider, CloudOptions, Streamed } from '../base';
 import { Logger } from '@util';
 
-export type MemoryOptions = CloudOptions & {};
+export type MemoryOptions = CloudOptions & {
+  /**
+   * Optional latency in milliseconds for simulated operations.
+   * Default is dynamic latency based on MAX_LATENCY.
+   */
+  latency?: number;
+};
 
 type Data = {
   payload: string;
@@ -30,6 +37,7 @@ class Database {
   private _records: Record[] = [];
   private _all = new ReplaySubject<Record[]>();
   private _latest = new Subject<Record[]>();
+  private _latency: number | undefined;
 
   get all(): Observable<Record[]> {
     return this._all;
@@ -39,7 +47,11 @@ class Database {
     return this._latest;
   }
 
-  static latency(): number {
+  static latency(configuredLatency?: number): number {
+    if (configuredLatency !== undefined) {
+      return configuredLatency;
+    }
+    
     const min = Math.ceil(Database.MAX_LATENCY / 10);
     return Math.floor(Math.random() * (min * 2 - min + 1)) + min;
   }
@@ -47,8 +59,10 @@ class Database {
   constructor(
     private id: string,
     signal: AbortSignal,
-    private logger?: Logger
+    private logger?: Logger,
+    latency?: number
   ) {
+    this._latency = latency;
     signal.addEventListener('abort', () => {
       this._abort.abort();
     });
@@ -90,7 +104,7 @@ class Database {
         this._all.next([record]);
 
         resolve();
-      }, Database.latency());
+      }, Database.latency(this._latency));
     });
   }
 }
@@ -109,19 +123,32 @@ export class Memory extends CloudProvider<Record> {
   constructor(id: string, options: MemoryOptions) {
     super(id, options);
   }
+  
+  /**
+   * Get configured latency from options or undefined for dynamic latency
+   */
+  private get latency(): number | undefined {
+    return this.options.latency;
+  }
 
   init(signal: AbortSignal): Observable<this> {
-    return timer(Database.latency()).pipe(
+    // Always use timer even with 0 latency to maintain async behavior
+    return timer(Database.latency(this.latency)).pipe(
       takeUntil(fromEvent(signal, 'abort')),
       map(() => {
-        this._database = new Database(this.id, signal, this.logger);
+        this._database = new Database(this.id, signal, this.logger, this.latency);
         return this;
       })
     );
   }
 
   protected _stream(all: boolean): Observable<Record[]> {
-    return all ? this.database.all : this.database.latest;
+    // Use timer to introduce latency before streaming
+    return timer(Database.latency(this.latency)).pipe(
+      map(() => all ? this.database.all : this.database.latest),
+      // Flatten the observable-of-observable
+      concatMap(obs => obs)
+    );
   }
 
   public unmarshall<T>(event: Record): Streamed<T, string> {
