@@ -143,12 +143,9 @@ export class Memory extends CloudProvider<Record> {
   }
 
   protected _stream(all: boolean): Observable<Record[]> {
-    // Use timer to introduce latency before streaming
-    return timer(Database.latency(this.latency)).pipe(
-      map(() => all ? this.database.all : this.database.latest),
-      // Flatten the observable-of-observable
-      concatMap(obs => obs)
-    );
+    // Get the stream observable directly - don't add latency here
+    // as the latency should only be for initial emission and put operations
+    return all ? this.database.all : this.database.latest;
   }
 
   public unmarshall<T>(event: Record): Streamed<T, string> {
