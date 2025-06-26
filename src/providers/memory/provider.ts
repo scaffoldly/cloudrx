@@ -31,7 +31,7 @@ type Record = {
 };
 
 class Database {
-  public static MAX_LATENCY = 100; // Reduced latency to speed up tests
+  public static DEFAULT_LATENCY = 0;
 
   private _abort = new AbortController();
   private _records: Record[] = [];
@@ -51,8 +51,7 @@ class Database {
     if (configuredLatency !== undefined) {
       return configuredLatency;
     }
-    const min = Math.ceil(Database.MAX_LATENCY / 10);
-    return Math.floor(Math.random() * (min * 2 - min + 1)) + min;
+    return Database.DEFAULT_LATENCY;
   }
 
   constructor(

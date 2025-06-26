@@ -157,16 +157,17 @@ describe('persist', () => {
       // Use the persist operator with our mock provider
       await run(persist(of(memoryProvider)));
     });
-    
+
     test('in-memory-zero-latency', async () => {
+      // Zero latency test doesn't need timeout adjustment
       // Create a memory provider with 0ms latency
       const abortController = new AbortController();
       const provider = new Memory(testId(), {
         signal: abortController.signal,
         logger,
-        latency: 0
+        latency: 0,
       });
-      
+
       try {
         // Use the persist operator with real provider but 0ms latency
         await run(persist(provider.init(abortController.signal)));
@@ -174,18 +175,19 @@ describe('persist', () => {
         abortController.abort();
       }
     });
-    
+
     test('in-memory-with-latency', async () => {
-      // Create a memory provider with 100ms latency - we don't use 1000ms for tests to keep them fast
+      // Using a global timeout of 90s set in package.json
+      // Create a memory provider with 1000ms latency for realistic testing
       const abortController = new AbortController();
       const provider = new Memory(testId(), {
         signal: abortController.signal,
         logger,
-        latency: 100
+        latency: 1000,
       });
-      
+
       try {
-        // Use the persist operator with real provider and 100ms latency
+        // Use the persist operator with real provider and 1000ms latency
         await run(persist(provider.init(abortController.signal)));
       } finally {
         abortController.abort();

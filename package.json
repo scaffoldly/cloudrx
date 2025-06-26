@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "jest": "NODE_OPTIONS='--experimental-vm-modules --trace-warnings' jest",
-    "test": "npm run jest -- --testTimeout=30000",
+    "test": "npm run jest -- --testTimeout=90000",
     "test:watch": "npm run jest -- --watch"
   },
   "keywords": [
