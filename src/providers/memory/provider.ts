@@ -51,7 +51,6 @@ class Database {
     if (configuredLatency !== undefined) {
       return configuredLatency;
     }
-    
     const min = Math.ceil(Database.MAX_LATENCY / 10);
     return Math.floor(Math.random() * (min * 2 - min + 1)) + min;
   }
@@ -123,7 +122,6 @@ export class Memory extends CloudProvider<Record> {
   constructor(id: string, options: MemoryOptions) {
     super(id, options);
   }
-  
   /**
    * Get configured latency from options or undefined for dynamic latency
    */
@@ -136,16 +134,26 @@ export class Memory extends CloudProvider<Record> {
     return timer(Database.latency(this.latency)).pipe(
       takeUntil(fromEvent(signal, 'abort')),
       map(() => {
-        this._database = new Database(this.id, signal, this.logger, this.latency);
+        this._database = new Database(
+          this.id,
+          signal,
+          this.logger,
+          this.latency
+        );
         return this;
       })
     );
   }
 
   protected _stream(all: boolean): Observable<Record[]> {
-    // Get the stream observable directly - don't add latency here
-    // as the latency should only be for initial emission and put operations
-    return all ? this.database.all : this.database.latest;
+    // Apply configured latency to stream emissions
+    const source$ = all ? this.database.all : this.database.latest;
+    return source$.pipe(
+      concatMap((records) => {
+        // Always use timer even with 0 latency to maintain async behavior
+        return timer(Database.latency(this.latency)).pipe(map(() => records));
+      })
+    );
   }
 
   public unmarshall<T>(event: Record): Streamed<T, string> {
