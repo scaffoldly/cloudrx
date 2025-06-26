@@ -128,7 +128,7 @@ export class Memory extends CloudProvider<Record> {
    * Get configured latency from options or undefined for dynamic latency
    */
   private get latency(): number | undefined {
-    return this.options.latency;
+    return (this.opts as MemoryOptions).latency;
   }
 
   init(signal: AbortSignal): Observable<this> {
