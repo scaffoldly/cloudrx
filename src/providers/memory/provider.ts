@@ -31,7 +31,11 @@ type Record = {
 };
 
 class Database {
+  // Default latency values for simulated cloud operations
   public static DEFAULT_LATENCY = 0;
+  public static INIT_LATENCY = 5000; // ~5sec for cloud resource creation
+  public static STREAM_LATENCY = 250; // ~250ms per batch for streaming
+  public static PUT_LATENCY = 500; // ~500ms per put operation
 
   private _abort = new AbortController();
   private _records: Record[] = [];
@@ -47,10 +51,23 @@ class Database {
     return this._latest;
   }
 
-  static latency(configuredLatency?: number): number {
+  static latency(
+    configuredLatency?: number,
+    operationType?: 'init' | 'stream' | 'put'
+  ): number {
     if (configuredLatency !== undefined) {
       return configuredLatency;
     }
+
+    // Return appropriate latency based on operation type
+    if (operationType === 'init') {
+      return Database.INIT_LATENCY;
+    } else if (operationType === 'stream') {
+      return Database.STREAM_LATENCY;
+    } else if (operationType === 'put') {
+      return Database.PUT_LATENCY;
+    }
+
     return Database.DEFAULT_LATENCY;
   }
 
@@ -88,21 +105,24 @@ class Database {
       record,
     });
     return new Promise((resolve) => {
-      setTimeout(() => {
-        this._records.push(record);
-        this.logger?.debug(`[${this.id}] Put`, {
-          record,
-        });
+      setTimeout(
+        () => {
+          this._records.push(record);
+          this.logger?.debug(`[${this.id}] Put`, {
+            record,
+          });
 
-        // Immediately emit to streams to prevent test timeouts
-        this.logger?.debug(`[${this.id}] Streaming`, {
-          record,
-        });
-        this._latest.next([record]);
-        this._all.next([record]);
+          // Emit to streams with appropriate latency
+          this.logger?.debug(`[${this.id}] Streaming`, {
+            record,
+          });
+          this._latest.next([record]);
+          this._all.next([record]);
 
-        resolve();
-      }, Database.latency(this._latency));
+          resolve();
+        },
+        Database.latency(this._latency, 'put')
+      );
     });
   }
 }
@@ -130,7 +150,7 @@ export class Memory extends CloudProvider<Record> {
 
   init(signal: AbortSignal): Observable<this> {
     // Always use timer even with 0 latency to maintain async behavior
-    return timer(Database.latency(this.latency)).pipe(
+    return timer(Database.latency(this.latency, 'init')).pipe(
       takeUntil(fromEvent(signal, 'abort')),
       map(() => {
         this._database = new Database(
@@ -150,7 +170,9 @@ export class Memory extends CloudProvider<Record> {
     return source$.pipe(
       concatMap((records) => {
         // Always use timer even with 0 latency to maintain async behavior
-        return timer(Database.latency(this.latency)).pipe(map(() => records));
+        return timer(Database.latency(this.latency, 'stream')).pipe(
+          map(() => records)
+        );
       })
     );
   }

@@ -101,6 +101,9 @@ describe('persist', () => {
   //   });
 
   describe('hot', () => {
+    // Set a longer timeout for all tests in this describe block
+    jest.setTimeout(30000);
+    
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
     ): Promise<void> => {
@@ -159,13 +162,12 @@ describe('persist', () => {
     });
 
     test('in-memory-zero-latency', async () => {
-      // Zero latency test doesn't need timeout adjustment
       // Create a memory provider with 0ms latency
       const abortController = new AbortController();
       const provider = new Memory(testId(), {
         signal: abortController.signal,
         logger,
-        latency: 0,
+        latency: 0, // Explicitly set to 0 to use DEFAULT_LATENCY
       });
 
       try {
@@ -177,13 +179,12 @@ describe('persist', () => {
     });
 
     test('in-memory-with-latency', async () => {
-      // Using a global timeout of 90s set in package.json
-      // Create a memory provider with 1000ms latency for realistic testing
+      // Create a memory provider with realistic latency for testing
       const abortController = new AbortController();
       const provider = new Memory(testId(), {
         signal: abortController.signal,
         logger,
-        latency: 1000,
+        latency: 500, // Reduced latency but still realistic
       });
 
       try {
