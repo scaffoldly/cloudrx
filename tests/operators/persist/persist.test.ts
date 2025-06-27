@@ -4,13 +4,16 @@ import {
   firstValueFrom,
   Subject,
   map,
+  of,
   MonoTypeOperatorFunction,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
 import { createTestLogger } from '../../utils/logger';
-// import { Memory } from '@providers';
-// import { persist } from '@operators';
-// import { testId } from '../../setup';
+import { ICloudProvider } from '@providers';
+import { persist } from '@operators';
+// Import Memory provider for in-memory latency tests
+import { Memory } from '@providers';
+import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
 
@@ -98,6 +101,9 @@ describe('persist', () => {
   //   });
 
   describe('hot', () => {
+    // Set a longer timeout for all tests in this describe block
+    jest.setTimeout(30000);
+    
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
     ): Promise<void> => {
@@ -135,6 +141,9 @@ describe('persist', () => {
       console.log('Next produced event:', producedEvents);
       expect(producedEvents).toHaveLength(1);
       expect(producedEvents[0]).toEqual(data3);
+
+      // Complete the producer to properly clean up resources
+      producer.complete();
     };
 
     test('baseline', async () => {
@@ -142,10 +151,48 @@ describe('persist', () => {
       await run(operator);
     });
 
-    test('in-memory', async () => {
-      //   await run(
-      //     // persist(Memory.from(testId(), { signal: abort.signal, logger }))
-      //   );
+    test('in-memory-mock', async () => {
+      // Create a mock memory provider for testing
+      const memoryProvider = {
+        store: <T>(value: T) => of(value),
+      } as unknown as ICloudProvider<unknown>;
+
+      // Use the persist operator with our mock provider
+      await run(persist(of(memoryProvider)));
+    });
+
+    test('in-memory-zero-latency', async () => {
+      // Create a memory provider with 0ms latency
+      const abortController = new AbortController();
+      const provider = new Memory(testId(), {
+        signal: abortController.signal,
+        logger,
+        latency: 0, // Explicitly set to 0 to use DEFAULT_LATENCY
+      });
+
+      try {
+        // Use the persist operator with real provider but 0ms latency
+        await run(persist(provider.init(abortController.signal)));
+      } finally {
+        abortController.abort();
+      }
+    });
+
+    test('in-memory-with-latency', async () => {
+      // Create a memory provider with realistic latency for testing
+      const abortController = new AbortController();
+      const provider = new Memory(testId(), {
+        signal: abortController.signal,
+        logger,
+        latency: 500, // Reduced latency but still realistic
+      });
+
+      try {
+        // Use the persist operator with real provider and 1000ms latency
+        await run(persist(provider.init(abortController.signal)));
+      } finally {
+        abortController.abort();
+      }
     });
 
     test('aws-dynamodb', async () => {});

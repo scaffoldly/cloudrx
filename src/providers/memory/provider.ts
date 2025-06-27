@@ -1,5 +1,4 @@
 import {
-  delay,
   from,
   fromEvent,
   map,
@@ -9,11 +8,18 @@ import {
   takeUntil,
   tap,
   timer,
+  concatMap,
 } from 'rxjs';
 import { CloudProvider, CloudOptions, Streamed } from '../base';
 import { Logger } from '@util';
 
-export type MemoryOptions = CloudOptions & {};
+export type MemoryOptions = CloudOptions & {
+  /**
+   * Optional latency in milliseconds for simulated operations.
+   * Default is dynamic latency based on MAX_LATENCY.
+   */
+  latency?: number;
+};
 
 type Data = {
   payload: string;
@@ -25,31 +31,53 @@ type Record = {
 };
 
 class Database {
-  public static MAX_LATENCY = 1000;
+  // Default latency values for simulated cloud operations
+  public static DEFAULT_LATENCY = 0;
+  public static INIT_LATENCY = 5000; // ~5sec for cloud resource creation
+  public static STREAM_LATENCY = 250; // ~250ms per batch for streaming
+  public static PUT_LATENCY = 500; // ~500ms per put operation
 
   private _abort = new AbortController();
   private _records: Record[] = [];
   private _all = new ReplaySubject<Record[]>();
   private _latest = new Subject<Record[]>();
+  private _latency: number | undefined;
 
   get all(): Observable<Record[]> {
-    return this._all.pipe(delay(Database.latency()));
+    return this._all;
   }
 
   get latest(): Observable<Record[]> {
-    return this._latest.pipe(delay(Database.latency()));
+    return this._latest;
   }
 
-  static latency(): number {
-    const min = Math.ceil(Database.MAX_LATENCY / 10);
-    return Math.floor(Math.random() * (min * 2 - min + 1)) + min;
+  static latency(
+    configuredLatency?: number,
+    operationType?: 'init' | 'stream' | 'put'
+  ): number {
+    if (configuredLatency !== undefined) {
+      return configuredLatency;
+    }
+
+    // Return appropriate latency based on operation type
+    if (operationType === 'init') {
+      return Database.INIT_LATENCY;
+    } else if (operationType === 'stream') {
+      return Database.STREAM_LATENCY;
+    } else if (operationType === 'put') {
+      return Database.PUT_LATENCY;
+    }
+
+    return Database.DEFAULT_LATENCY;
   }
 
   constructor(
     private id: string,
     signal: AbortSignal,
-    private logger?: Logger
+    private logger?: Logger,
+    latency?: number
   ) {
+    this._latency = latency;
     signal.addEventListener('abort', () => {
       this._abort.abort();
     });
@@ -77,23 +105,24 @@ class Database {
       record,
     });
     return new Promise((resolve) => {
-      setTimeout(() => {
-        this._records.push(record);
-        this.logger?.debug(`[${this.id}] Put`, {
-          record,
-        });
+      setTimeout(
+        () => {
+          this._records.push(record);
+          this.logger?.debug(`[${this.id}] Put`, {
+            record,
+          });
 
-        setTimeout(() => {
-          // Simulated delay async emission to streams
+          // Emit to streams with appropriate latency
           this.logger?.debug(`[${this.id}] Streaming`, {
             record,
           });
           this._latest.next([record]);
           this._all.next([record]);
-        }, Database.latency());
 
-        resolve();
-      }, Database.latency());
+          resolve();
+        },
+        Database.latency(this._latency, 'put')
+      );
     });
   }
 }
@@ -112,19 +141,40 @@ export class Memory extends CloudProvider<Record> {
   constructor(id: string, options: MemoryOptions) {
     super(id, options);
   }
+  /**
+   * Get configured latency from options or undefined for dynamic latency
+   */
+  private get latency(): number | undefined {
+    return (this.opts as MemoryOptions).latency;
+  }
 
   init(signal: AbortSignal): Observable<this> {
-    return timer(Database.latency()).pipe(
+    // Always use timer even with 0 latency to maintain async behavior
+    return timer(Database.latency(this.latency, 'init')).pipe(
       takeUntil(fromEvent(signal, 'abort')),
       map(() => {
-        this._database = new Database(this.id, signal, this.logger);
+        this._database = new Database(
+          this.id,
+          signal,
+          this.logger,
+          this.latency
+        );
         return this;
       })
     );
   }
 
   protected _stream(all: boolean): Observable<Record[]> {
-    return all ? this.database.all : this.database.latest;
+    // Apply configured latency to stream emissions
+    const source$ = all ? this.database.all : this.database.latest;
+    return source$.pipe(
+      concatMap((records) => {
+        // Always use timer even with 0 latency to maintain async behavior
+        return timer(Database.latency(this.latency, 'stream')).pipe(
+          map(() => records)
+        );
+      })
+    );
   }
 
   public unmarshall<T>(event: Record): Streamed<T, string> {
@@ -138,13 +188,18 @@ export class Memory extends CloudProvider<Record> {
   }
 
   protected _store<T>(item: T): Observable<(event: Record) => boolean> {
-    const id = crypto.randomUUID();
-    return from(
-      this.database.put({
-        id,
-        data: { payload: JSON.stringify(item) },
-      })
-    ).pipe(
+    // Generate a UUID using a simpler method
+    const id = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+
+    // For simple in-memory tests, just immediately emit the event to the stream
+    const record = {
+      id,
+      data: { payload: JSON.stringify(item) },
+    };
+
+    this.logger.debug(`[${this.id}] Storing item with id: ${id}`);
+
+    return from(this.database.put(record)).pipe(
       map(() => {
         return (event: Record): boolean => event.id === id;
       })
