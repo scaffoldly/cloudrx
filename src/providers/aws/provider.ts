@@ -67,7 +67,10 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-export class DynamoDB extends CloudProvider<_Record, string> {
+export class DynamoDB extends CloudProvider<
+  _Record,
+  NonNullable<_Record['dynamodb']>['SequenceNumber']
+> {
   protected _init(): Observable<this> {
     throw new Error('Method not implemented.');
   }
