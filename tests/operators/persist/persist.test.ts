@@ -7,7 +7,6 @@ import {
   of,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
-import { createTestLogger } from '../../utils/logger';
 import { persist } from '@operators';
 import { Memory } from '@providers';
 import { testId } from '../../setup';
@@ -20,10 +19,9 @@ type Data = { message: string; timestamp: number };
 describe('persist', () => {
   let container: DynamoDBLocalContainer;
   let abort: AbortController;
-  const logger = createTestLogger();
 
   beforeAll(async () => {
-    container = new DynamoDBLocalContainer(logger);
+    container = new DynamoDBLocalContainer(console);
     await container.start();
   });
 
@@ -114,28 +112,20 @@ describe('persist', () => {
       let producedEventsP: Promise<Data[]>;
       let producedEvents: Data[];
 
-      console.log('Setting up producer...');
       producedEventsP = firstValueFrom(observable.pipe(take(2), toArray()));
-      console.log('Producing 2 events:', data1, data2);
       producer.next(data1);
       producer.next(data2);
 
-      console.log('Waiting for produced events...');
       producedEvents = await producedEventsP;
-      console.log('Produced events:', producedEvents);
 
       expect(producedEvents).toHaveLength(2);
       expect(producedEvents[0]).toEqual(data1);
       expect(producedEvents[1]).toEqual(data2);
 
-      console.log('Setting up for next event...');
       producedEventsP = firstValueFrom(observable.pipe(take(1), toArray()));
-      console.log('Producing 1 more event:', data3);
       producer.next(data3);
 
-      console.log('Waiting for next produced event...');
       producedEvents = await producedEventsP;
-      console.log('Next produced event:', producedEvents);
       expect(producedEvents).toHaveLength(1);
       expect(producedEvents[0]).toEqual(data3);
     };
@@ -145,9 +135,7 @@ describe('persist', () => {
     });
 
     test('memory', async () => {
-      await run(
-        persist(Memory.from(testId(), { signal: abort.signal, logger }))
-      );
+      await run(persist(Memory.from(testId())));
     });
 
     test('dynamodb', async () => {});

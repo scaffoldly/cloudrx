@@ -21,13 +21,13 @@ export class DynamoDBLocalContainer {
 
   async start(): Promise<void> {
     try {
-      this.logger.info('Starting DynamoDB Local container...');
+      this.logger.info?.('Starting DynamoDB Local container...');
       this.startedContainer = await this.container.start();
 
       const port = this.startedContainer.getMappedPort(8000);
       const endpoint = `http://localhost:${port}`;
 
-      this.logger.info(`DynamoDB Local started at ${endpoint}`);
+      this.logger.info?.(`DynamoDB Local started at ${endpoint}`);
 
       // Create DynamoDB client pointing to local instance
       this.client = new DynamoDBClient({
@@ -63,7 +63,7 @@ export class DynamoDBLocalContainer {
 
   async stop(): Promise<void> {
     if (this.startedContainer) {
-      this.logger.info('Stopping DynamoDB Local container...');
+      this.logger.info?.('Stopping DynamoDB Local container...');
       await this.startedContainer.stop();
       this.startedContainer = null;
     }

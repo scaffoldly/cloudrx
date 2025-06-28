@@ -7,7 +7,7 @@ import {
   timer,
 } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { CloudProvider, CloudOptions, Streamed, Matcher } from '../base';
+import { CloudProvider, Streamed, Matcher, CloudOptions } from '../base';
 
 type MemoryDelays = {
   init?: number; // Initialization delay in milliseconds
@@ -55,20 +55,26 @@ export class Memory extends CloudProvider<Record, Record['id']> {
   protected _init(): Observable<this> {
     return new Observable<this>((subscriber) => {
       if (this.signal.aborted) {
+        this.logger.debug?.(`[${this.id}] Init aborted`);
         subscriber.error(this.options?.signal?.reason);
         return;
       }
 
       if (this.initialized) {
+        this.logger.debug?.(`[${this.id}] Already initialized`);
         subscriber.next(this);
         subscriber.complete();
         return;
       }
 
+      this.logger.debug?.(
+        `[${this.id}] Starting initialization with ${this.delays.init}ms delay`
+      );
       const initialization = timer(this.delays.init)
         .pipe(
           takeUntil(fromEvent(this.signal, 'abort')),
           map(() => {
+            this.logger.debug?.(`[${this.id}] Initialization complete`);
             this.initialized = true;
             subscriber.next(this);
             subscriber.complete();
@@ -76,6 +82,9 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         )
         .subscribe();
 
+      this.logger.debug?.(
+        `[${this.id}] Starting emission interval every ${this.delays.emission}ms`
+      );
       const emission = interval(this.delays.emission)
         .pipe(
           takeUntil(fromEvent(this.signal, 'abort')),
@@ -87,6 +96,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         .subscribe();
 
       return () => {
+        this.logger.debug?.(`[${this.id}] Init cleanup`);
         initialization.unsubscribe();
         emission.unsubscribe();
       };
@@ -96,14 +106,35 @@ export class Memory extends CloudProvider<Record, Record['id']> {
   protected _stream(all: boolean): Observable<Record[]> {
     return new Observable<Record[]>((subscriber) => {
       if (!this.initialized) {
+        this.logger.debug?.(
+          `[${this.id}] Stream requested but not initialized`
+        );
         subscriber.error(
           new Error('Provider not initialized - call init() first')
         );
         return;
       }
 
+      const streamType = all ? 'all' : 'latest';
       const stream = all ? this.all : this.latest;
-      const subscription = stream.subscribe(subscriber);
+      const subscription = stream.subscribe({
+        next: (records) => {
+          if (records.length > 0) {
+            this.logger.debug?.(
+              `[${this.id}] ${streamType} stream emitted ${records.length} records`
+            );
+          }
+          subscriber.next(records);
+        },
+        error: (error) => {
+          this.logger.debug?.(
+            `[${this.id}] ${streamType} stream error:`,
+            error
+          );
+          subscriber.error(error);
+        },
+        complete: () => subscriber.complete(),
+      });
 
       return () => {
         subscription.unsubscribe();
@@ -114,6 +145,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
   protected _store<T>(item: T): Observable<(event: Record) => boolean> {
     return new Observable<Matcher<Record>>((subscriber) => {
       if (!this.initialized) {
+        this.logger.debug?.(`[${this.id}] Store requested but not initialized`);
         subscriber.error(
           new Error('Provider not initialized - call init() first')
         );
@@ -121,6 +153,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
       }
 
       const id = crypto.randomUUID();
+      this.logger.debug?.(`[${this.id}] Storing item with id ${id}:`, item);
 
       const data: Data = {
         payload: JSON.stringify(item),
@@ -137,7 +170,8 @@ export class Memory extends CloudProvider<Record, Record['id']> {
           map(() => {
             this.all.next([record]);
             this.latest.next([record]);
-            subscriber.next((event: Record) => event.id === id);
+            const matcher = (event: Record): boolean => event.id === id;
+            subscriber.next(matcher);
             subscriber.complete();
           })
         )
