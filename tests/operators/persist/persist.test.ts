@@ -98,10 +98,10 @@ describe('persist', () => {
   //     expect(events[1]).toEqual(data2);
   //   });
 
-  describe('hot', () => {
+  describe('no-replay', () => {
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
-    ): Promise<void> => {
+    ): Promise<{ events: Data[] }> => {
       const data1: Data = { message: 'data-1', timestamp: performance.now() };
       const data2: Data = { message: 'data-2', timestamp: performance.now() };
       const data3: Data = { message: 'data-3', timestamp: performance.now() };
@@ -128,6 +128,27 @@ describe('persist', () => {
       producedEvents = await producedEventsP;
       expect(producedEvents).toHaveLength(1);
       expect(producedEvents[0]).toEqual(data3);
+
+      return { events: [data1, data2, data3] };
+    };
+
+    const replay = async (
+      operator: MonoTypeOperatorFunction<Data>,
+      expected: { events: Data[] }
+    ): Promise<void> => {
+      const producer = new Subject<Data>();
+      const observable = producer.pipe(operator);
+
+      let producedEventsP: Promise<Data[]>;
+      let producedEvents: Data[];
+
+      producedEventsP = firstValueFrom(
+        observable.pipe(take(expected.events.length), toArray())
+      );
+
+      producedEvents = await producedEventsP;
+
+      expect(producedEvents).toEqual(expected.events);
     };
 
     test('baseline', async () => {
@@ -136,6 +157,12 @@ describe('persist', () => {
 
     test('memory', async () => {
       await run(persist(Memory.from(testId())));
+    });
+
+    test('memory-replay', async () => {
+      const provider = Memory.from(testId(), { replay: true });
+      const expected = await run(persist(provider));
+      await replay(persist(provider), expected);
     });
 
     test('dynamodb', async () => {});
