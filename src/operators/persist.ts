@@ -1,5 +1,7 @@
 import {
+  combineLatest,
   concatMap,
+  delay,
   first,
   // mergeMap,
   MonoTypeOperatorFunction,
@@ -10,27 +12,34 @@ import {
 import { ICloudProvider } from '@providers';
 
 export type Persistable<T> = {
-  provider: Observable<ICloudProvider<unknown>>;
+  provider: Observable<ICloudProvider<unknown, unknown>>;
   source: Observable<T>;
 };
 
 export const persist = <T>(
-  provider: Observable<ICloudProvider<unknown> | undefined>
+  provider: Observable<ICloudProvider<unknown, unknown> | undefined>
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
-    return source.pipe(
-      concatMap((value) =>
-        provider.pipe(
-          first(),
-          concatMap((provider) => {
+    return new Observable<T>((subscriber) => {
+      const subscription = combineLatest([provider.pipe(first()), source])
+        .pipe(
+          concatMap(([provider, value]) => {
             if (!provider) {
-              return of(value);
+              return of(value).pipe(delay(1000));
             }
             return provider.store(value);
           })
         )
-      )
-    );
+        .subscribe({
+          next: (data) => subscriber.next(data),
+          error: (error) => subscriber.error(error),
+          complete: () => subscriber.complete(),
+        });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    });
   };
 };
 

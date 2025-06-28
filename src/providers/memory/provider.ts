@@ -1,19 +1,23 @@
 import {
-  delay,
-  from,
-  fromEvent,
-  map,
   Observable,
   ReplaySubject,
-  Subject,
-  takeUntil,
-  tap,
+  fromEvent,
+  interval,
+  map,
   timer,
 } from 'rxjs';
-import { CloudProvider, CloudOptions, Streamed } from '../base';
-import { Logger } from '@util';
+import { takeUntil } from 'rxjs/operators';
+import { CloudProvider, CloudOptions, Streamed, Matcher } from '../base';
 
-export type MemoryOptions = CloudOptions & {};
+type MemoryDelays = {
+  init?: number; // Initialization delay in milliseconds
+  emission?: number; // Emission delay in milliseconds
+  storage?: number; // Storage delay in milliseconds
+};
+
+export type MemoryOptions = CloudOptions & {
+  delays?: MemoryDelays; // Optional delays for initialization, emission, and storage
+};
 
 type Data = {
   payload: string;
@@ -24,110 +28,128 @@ type Record = {
   data: Data;
 };
 
-class Database {
-  public static MAX_LATENCY = 1000;
+export class Memory extends CloudProvider<Record, Record['id']> {
+  private all = new ReplaySubject<Record[]>();
+  private latest = new ReplaySubject<Record[]>(1);
+  private initialized = false;
 
-  private _abort = new AbortController();
-  private _records: Record[] = [];
-  private _all = new ReplaySubject<Record[]>();
-  private _latest = new Subject<Record[]>();
-
-  get all(): Observable<Record[]> {
-    return this._all.pipe(delay(Database.latency()));
-  }
-
-  get latest(): Observable<Record[]> {
-    return this._latest.pipe(delay(Database.latency()));
-  }
-
-  static latency(): number {
-    const min = Math.ceil(Database.MAX_LATENCY / 10);
-    return Math.floor(Math.random() * (min * 2 - min + 1)) + min;
-  }
+  private delays: Required<MemoryDelays> = {
+    init: 2000, // Default initialization delay
+    emission: 1000, // Default emission delay
+    storage: 25, // Default storage delay
+  };
 
   constructor(
-    private id: string,
-    signal: AbortSignal,
-    private logger?: Logger
+    id: string,
+    private options?: MemoryOptions
   ) {
-    signal.addEventListener('abort', () => {
-      this._abort.abort();
-    });
-
-    const simulation = timer(0, 50)
-      .pipe(
-        tap(() => {
-          // Random emit empty arrays to simulate background activity
-          this._latest.next([]);
-          this._all.next([]);
-        })
-      )
-      .subscribe();
-
-    this._abort.signal.addEventListener('abort', () => {
-      simulation.unsubscribe();
-      this._all.complete();
-      this._latest.complete();
-    });
-  }
-
-  async put(record: Record): Promise<void> {
-    // Simulated async writing to a database
-    this.logger?.debug(`[${this.id}] Putting`, {
-      record,
-    });
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        this._records.push(record);
-        this.logger?.debug(`[${this.id}] Put`, {
-          record,
-        });
-
-        setTimeout(() => {
-          // Simulated delay async emission to streams
-          this.logger?.debug(`[${this.id}] Streaming`, {
-            record,
-          });
-          this._latest.next([record]);
-          this._all.next([record]);
-        }, Database.latency());
-
-        resolve();
-      }, Database.latency());
-    });
-  }
-}
-
-export class Memory extends CloudProvider<Record> {
-  // A simulated database
-  private _database?: Database;
-
-  get database(): Database {
-    if (!this._database) {
-      throw new Error('Database is not initialized. Please call init() first.');
-    }
-    return this._database;
-  }
-
-  constructor(id: string, options: MemoryOptions) {
     super(id, options);
+
+    this.delays = {
+      init: this.options?.delays?.init ?? this.delays.init,
+      emission: this.options?.delays?.emission ?? this.delays.emission,
+      storage: this.options?.delays?.storage ?? this.delays.storage,
+    };
   }
 
-  init(signal: AbortSignal): Observable<this> {
-    return timer(Database.latency()).pipe(
-      takeUntil(fromEvent(signal, 'abort')),
-      map(() => {
-        this._database = new Database(this.id, signal, this.logger);
-        return this;
-      })
-    );
+  protected _init(): Observable<this> {
+    return new Observable<this>((subscriber) => {
+      if (this.signal.aborted) {
+        subscriber.error(this.options?.signal?.reason);
+        return;
+      }
+
+      if (this.initialized) {
+        subscriber.next(this);
+        subscriber.complete();
+        return;
+      }
+
+      const initialization = timer(this.delays.init)
+        .pipe(
+          takeUntil(fromEvent(this.signal, 'abort')),
+          map(() => {
+            this.initialized = true;
+            subscriber.next(this);
+            subscriber.complete();
+          })
+        )
+        .subscribe();
+
+      const emission = interval(this.delays.emission)
+        .pipe(
+          takeUntil(fromEvent(this.signal, 'abort')),
+          map(() => {
+            this.all.next([]);
+            this.latest.next([]);
+          })
+        )
+        .subscribe();
+
+      return () => {
+        initialization.unsubscribe();
+        emission.unsubscribe();
+      };
+    });
   }
 
   protected _stream(all: boolean): Observable<Record[]> {
-    return all ? this.database.all : this.database.latest;
+    return new Observable<Record[]>((subscriber) => {
+      if (!this.initialized) {
+        subscriber.error(
+          new Error('Provider not initialized - call init() first')
+        );
+        return;
+      }
+
+      const stream = all ? this.all : this.latest;
+      const subscription = stream.subscribe(subscriber);
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    });
   }
 
-  public unmarshall<T>(event: Record): Streamed<T, string> {
+  protected _store<T>(item: T): Observable<(event: Record) => boolean> {
+    return new Observable<Matcher<Record>>((subscriber) => {
+      if (!this.initialized) {
+        subscriber.error(
+          new Error('Provider not initialized - call init() first')
+        );
+        return;
+      }
+
+      const id = crypto.randomUUID();
+
+      const data: Data = {
+        payload: JSON.stringify(item),
+      };
+
+      const record: Record = {
+        id,
+        data,
+      };
+
+      const emission = timer(this.delays.storage)
+        .pipe(
+          takeUntil(fromEvent(this.signal, 'abort')),
+          map(() => {
+            this.all.next([record]);
+            this.latest.next([record]);
+            subscriber.next((event: Record) => event.id === id);
+            subscriber.complete();
+          })
+        )
+        .subscribe();
+
+      return () => {
+        emission.unsubscribe();
+      };
+    });
+  }
+
+  protected _unmarshall<T>(event: Record): Streamed<T, Record['id']> {
     const marker = event.id;
     const item = JSON.parse(event.data.payload) as T;
 
@@ -135,19 +157,5 @@ export class Memory extends CloudProvider<Record> {
       ...item,
       __marker__: marker,
     };
-  }
-
-  protected _store<T>(item: T): Observable<(event: Record) => boolean> {
-    const id = crypto.randomUUID();
-    return from(
-      this.database.put({
-        id,
-        data: { payload: JSON.stringify(item) },
-      })
-    ).pipe(
-      map(() => {
-        return (event: Record): boolean => event.id === id;
-      })
-    );
   }
 }

@@ -3,11 +3,14 @@ import {
   toArray,
   firstValueFrom,
   Subject,
-  map,
   MonoTypeOperatorFunction,
+  of,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
 import { createTestLogger } from '../../utils/logger';
+import { persist } from '@operators';
+import { Memory } from '@providers';
+import { testId } from '../../setup';
 // import { Memory } from '@providers';
 // import { persist } from '@operators';
 // import { testId } from '../../setup';
@@ -138,16 +141,15 @@ describe('persist', () => {
     };
 
     test('baseline', async () => {
-      const operator: MonoTypeOperatorFunction<Data> = map((data) => data);
-      await run(operator);
+      await run(persist(of(undefined)));
     });
 
-    test('in-memory', async () => {
-      //   await run(
-      //     // persist(Memory.from(testId(), { signal: abort.signal, logger }))
-      //   );
+    test('memory', async () => {
+      await run(
+        persist(Memory.from(testId(), { signal: abort.signal, logger }))
+      );
     });
 
-    test('aws-dynamodb', async () => {});
+    test('dynamodb', async () => {});
   });
 });
