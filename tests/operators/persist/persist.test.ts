@@ -37,63 +37,6 @@ describe('persist', () => {
     }
   });
 
-  //   const createOptions = (): DynamoDBProviderOptions => ({
-  //     client: container.getClient(),
-  //     hashKey: 'hashKey',
-  //     rangeKey: 'rangeKey',
-  //     signal: abort.signal,
-  //     logger,
-  //   });
-
-  //   test('hot', async () => {
-  //     const options = createOptions();
-  //     const data1: Data = { message: 'hot-1', timestamp: performance.now() };
-  //     const data2: Data = { message: 'hot-2', timestamp: performance.now() };
-
-  //     // Create basic Subject (hot observable)
-  //     const source$ = new Subject<Data>();
-  //     const persistable$ = of<Persistable<Data>>({
-  //       provider: DynamoDBProvider.from(testId(), options),
-  //       source: source$,
-  //     });
-  //     const observable = persistable$.pipe(persistTo());
-
-  //     // Start subscription
-  //     const promise = firstValueFrom(observable.pipe(take(2), toArray()));
-
-  //     // Emit values after subscription (hot observable pattern)
-  //     setTimeout(() => {
-  //       source$.next(data1);
-  //       source$.next(data2);
-  //     }, 100);
-
-  //     const events = await promise;
-  //     expect(events).toHaveLength(2);
-  //     expect(events[0]).toEqual(data1);
-  //     expect(events[1]).toEqual(data2);
-
-  //     source$.complete();
-  //   });
-
-  //   test('cold', async () => {
-  //     const options = createOptions();
-  //     const data1: Data = { message: 'cold-1', timestamp: performance.now() };
-  //     const data2: Data = { message: 'cold-2', timestamp: performance.now() };
-
-  //     // Create persistable object with provider and source
-  //     const source$ = of(data1, data2);
-  //     const persistable$ = of<Persistable<Data>>({
-  //       provider: DynamoDBProvider.from(testId(), options),
-  //       source: source$,
-  //     });
-  //     const observable = persistable$.pipe(persistTo());
-
-  //     const events = await firstValueFrom(observable.pipe(take(2), toArray()));
-  //     expect(events).toHaveLength(2);
-  //     expect(events[0]).toEqual(data1);
-  //     expect(events[1]).toEqual(data2);
-  //   });
-
   describe('hot', () => {
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
@@ -132,6 +75,8 @@ describe('persist', () => {
       operator: MonoTypeOperatorFunction<Data>,
       expected: { events: Data[] }
     ): Promise<void> => {
+      const data4: Data = { message: 'data-4', timestamp: performance.now() };
+
       const producer = new Subject<Data>();
       const observable = producer.pipe(operator);
 
@@ -143,22 +88,28 @@ describe('persist', () => {
       );
 
       producedEvents = await producedEventsP;
-
       expect(producedEvents).toEqual(expected.events);
+
+      producedEventsP = firstValueFrom(
+        observable.pipe(take(expected.events.length + 1), toArray())
+      );
+      producer.next(data4);
+
+      producedEvents = await producedEventsP;
+      expect(producedEvents).toHaveLength(expected.events.length + 1);
+      expect(producedEvents[producedEvents.length - 1]).toEqual(data4);
     };
 
     test('baseline', async () => {
       await run(persist());
+      // Providerless persistReplay has no historical data to replay
+      await replay(persistReplay(), { events: [] });
     });
 
     test('memory', async () => {
-      await run(persist(Memory.from(testId())));
-    });
-
-    test('memory-replay', async () => {
       const provider = Memory.from(testId());
-      const actual = await run(persist(provider));
-      await replay(persistReplay(provider), actual);
+      const events = await run(persist(provider));
+      await replay(persistReplay(provider), events);
     });
 
     test('dynamodb', async () => {});
