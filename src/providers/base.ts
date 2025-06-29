@@ -25,9 +25,9 @@ export interface ICloudProvider<TEvent, TMarker> {
   get id(): string;
   get signal(): AbortSignal;
   get logger(): Logger;
-  get replay(): boolean;
 
   init(): Observable<this>;
+  all(): Observable<TEvent>;
   stream(): Observable<TEvent>;
   store<T>(item: T): Observable<T>;
   unmarshall<T>(event: TEvent): Streamed<T, TMarker>;
@@ -36,7 +36,6 @@ export interface ICloudProvider<TEvent, TMarker> {
 export type CloudOptions = {
   signal?: AbortSignal;
   logger?: Logger;
-  replay?: boolean;
 };
 
 export type Matcher<TEvent> = (event: TEvent) => boolean;
@@ -81,10 +80,11 @@ export abstract class CloudProvider<TEvent, TMarker>
     Observable<ICloudProvider<unknown, unknown>>
   > = {};
 
-  private init$?: Observable<this>;
-  private latest$?: Observable<TEvent[]>;
-  private all$?: Observable<TEvent[]>;
-  private events: StreamEvent = new StreamEvent();
+  private _events: StreamEvent = new StreamEvent();
+  private _init$?: Observable<this>;
+  private _stream$?: Observable<TEvent[]>;
+  private _logger: Logger;
+  private _signal: AbortSignal;
 
   static from<
     Options extends CloudOptions,
@@ -101,20 +101,15 @@ export abstract class CloudProvider<TEvent, TMarker>
     return CloudProvider.instances[id] as Observable<Provider>;
   }
 
-  private _logger: Logger;
-  private _signal: AbortSignal;
-  private _replay: boolean;
-
   protected constructor(
     public readonly id: string,
     opts?: CloudOptions
   ) {
     this._logger = opts?.logger ?? console;
     this._signal = opts?.signal ?? new Abort().signal;
-    this._replay = opts?.replay ?? false;
 
     this._signal.addEventListener('abort', () => {
-      this.events.emit('end');
+      this._events.emit('end');
       delete CloudProvider.instances[this.id];
     });
   }
@@ -127,10 +122,6 @@ export abstract class CloudProvider<TEvent, TMarker>
     return this._signal;
   }
 
-  get replay(): boolean {
-    return this._replay;
-  }
-
   protected abstract _init(): Observable<this>;
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
   protected abstract _store<T>(item: T): Observable<Matcher<TEvent>>;
@@ -138,14 +129,26 @@ export abstract class CloudProvider<TEvent, TMarker>
 
   public init(): Observable<this> {
     return new Observable<this>((subscriber) => {
-      if (!this.init$) {
+      if (!this._init$) {
         this.logger.debug?.(`[${this.id}] Initializing provider`);
-        this.init$ = this._init().pipe(shareReplay(1));
+        this._init$ = this._init().pipe(shareReplay(1));
       } else {
         this.logger.debug?.(`[${this.id}] Reusing existing init observable`);
       }
 
-      const subscription = this.init$.subscribe(subscriber);
+      const subscription = this._init$.subscribe(subscriber);
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    });
+  }
+
+  public all(): Observable<TEvent> {
+    return new Observable<TEvent>((subscriber) => {
+      const subscription = this._stream(true)
+        .pipe(concatAll())
+        .subscribe(subscriber);
 
       return () => {
         subscription.unsubscribe();
@@ -155,43 +158,27 @@ export abstract class CloudProvider<TEvent, TMarker>
 
   public stream(): Observable<TEvent> {
     return new Observable<TEvent>((subscriber) => {
-      let stream$: Observable<TEvent[]>;
-
-      if (this.replay) {
-        if (!this.all$) {
-          this.logger.debug?.(`[${this.id}] Creating new 'all' stream`);
-          this.all$ = this._stream(true).pipe(
-            observeOn(asyncScheduler),
-            shareReplay(1)
-          );
-        } else {
-          this.logger.debug?.(`[${this.id}] Reusing existing 'all' stream`);
-        }
-        stream$ = this.all$;
+      if (!this._stream$) {
+        this.logger.debug?.(`[${this.id}] Creating new 'latest' stream`);
+        this._stream$ = this._stream(false).pipe(
+          observeOn(asyncScheduler),
+          shareReplay(1)
+        );
       } else {
-        if (!this.latest$) {
-          this.logger.debug?.(`[${this.id}] Creating new 'latest' stream`);
-          this.latest$ = this._stream(false).pipe(
-            observeOn(asyncScheduler),
-            shareReplay(1)
-          );
-        } else {
-          this.logger.debug?.(`[${this.id}] Reusing existing 'latest' stream`);
-        }
-        stream$ = this.latest$;
+        this.logger.debug?.(`[${this.id}] Reusing existing 'latest' stream`);
       }
 
       this.logger.debug?.(`[${this.id}] Starting stream subscription`);
-      const subscription = stream$
+      const subscription = this._stream$
         .pipe(
-          takeUntil(fromEvent(this.events, 'stop')),
+          takeUntil(fromEvent(this._events, 'stop')),
           tap((events) => {
             if (events.length > 0) {
               this.logger.debug?.(
                 `[${this.id}] Stream emitted ${events.length} events`
               );
             }
-            this.events.emit('start');
+            this._events.emit('start');
           }),
           concatAll()
         )
@@ -229,11 +216,11 @@ export abstract class CloudProvider<TEvent, TMarker>
       );
 
       this.logger.debug?.(`[${this.id}] Waiting for stream to start`);
-      this.events.once('start', () => {
+      this._events.once('start', () => {
         this.logger.debug?.(`[${this.id}] Stream started, setting up matcher`);
         match = combineLatest([stream$, matcher$])
           .pipe(
-            takeUntil(fromEvent(this.events, 'stop')),
+            takeUntil(fromEvent(this._events, 'stop')),
             filter(([event, matcher]) => matcher(event)),
             map(([event]) => {
               const streamed = this._unmarshall(event) as Streamed<T, TMarker>;
@@ -253,7 +240,7 @@ export abstract class CloudProvider<TEvent, TMarker>
       });
 
       stream = stream$
-        .pipe(takeUntil(fromEvent(this.events, 'start')))
+        .pipe(takeUntil(fromEvent(this._events, 'start')))
         .subscribe();
 
       return () => {

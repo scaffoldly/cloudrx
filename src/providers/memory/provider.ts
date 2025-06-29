@@ -29,9 +29,9 @@ type Record = {
 };
 
 export class Memory extends CloudProvider<Record, Record['id']> {
-  private all = new ReplaySubject<Record[]>();
-  private latest = new ReplaySubject<Record[]>(1);
-  private initialized = false;
+  private _all = new ReplaySubject<Record[]>();
+  private _latest = new ReplaySubject<Record[]>(1);
+  private _initialized = false;
 
   private delays: Required<MemoryDelays> = {
     init: 2000, // Default initialization delay
@@ -60,7 +60,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         return;
       }
 
-      if (this.initialized) {
+      if (this._initialized) {
         this.logger.debug?.(`[${this.id}] Already initialized`);
         subscriber.next(this);
         subscriber.complete();
@@ -75,7 +75,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
           takeUntil(fromEvent(this.signal, 'abort')),
           map(() => {
             this.logger.debug?.(`[${this.id}] Initialization complete`);
-            this.initialized = true;
+            this._initialized = true;
             subscriber.next(this);
             subscriber.complete();
           })
@@ -89,8 +89,8 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         .pipe(
           takeUntil(fromEvent(this.signal, 'abort')),
           map(() => {
-            this.all.next([]);
-            this.latest.next([]);
+            this._all.next([]);
+            this._latest.next([]);
           })
         )
         .subscribe();
@@ -105,7 +105,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
 
   protected _stream(all: boolean): Observable<Record[]> {
     return new Observable<Record[]>((subscriber) => {
-      if (!this.initialized) {
+      if (!this._initialized) {
         this.logger.debug?.(
           `[${this.id}] Stream requested but not initialized`
         );
@@ -116,7 +116,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
       }
 
       const streamType = all ? 'all' : 'latest';
-      const stream = all ? this.all : this.latest;
+      const stream = all ? this._all : this._latest;
       const subscription = stream.subscribe({
         next: (records) => {
           if (records.length > 0) {
@@ -144,7 +144,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
 
   protected _store<T>(item: T): Observable<(event: Record) => boolean> {
     return new Observable<Matcher<Record>>((subscriber) => {
-      if (!this.initialized) {
+      if (!this._initialized) {
         this.logger.debug?.(`[${this.id}] Store requested but not initialized`);
         subscriber.error(
           new Error('Provider not initialized - call init() first')
@@ -168,8 +168,8 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         .pipe(
           takeUntil(fromEvent(this.signal, 'abort')),
           map(() => {
-            this.all.next([record]);
-            this.latest.next([record]);
+            this._all.next([record]);
+            this._latest.next([record]);
             const matcher = (event: Record): boolean => event.id === id;
             subscriber.next(matcher);
             subscriber.complete();

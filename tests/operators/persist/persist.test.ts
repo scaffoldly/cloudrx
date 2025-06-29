@@ -4,15 +4,11 @@ import {
   firstValueFrom,
   Subject,
   MonoTypeOperatorFunction,
-  of,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
-import { persist } from '@operators';
+import { persist, persistReplay } from '@operators';
 import { Memory } from '@providers';
 import { testId } from '../../setup';
-// import { Memory } from '@providers';
-// import { persist } from '@operators';
-// import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
 
@@ -98,7 +94,7 @@ describe('persist', () => {
   //     expect(events[1]).toEqual(data2);
   //   });
 
-  describe('no-replay', () => {
+  describe('hot', () => {
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
     ): Promise<{ events: Data[] }> => {
@@ -152,7 +148,7 @@ describe('persist', () => {
     };
 
     test('baseline', async () => {
-      await run(persist(of(undefined)));
+      await run(persist());
     });
 
     test('memory', async () => {
@@ -160,9 +156,9 @@ describe('persist', () => {
     });
 
     test('memory-replay', async () => {
-      const provider = Memory.from(testId(), { replay: true });
-      const expected = await run(persist(provider));
-      await replay(persist(provider), expected);
+      const provider = Memory.from(testId());
+      const actual = await run(persist(provider));
+      await replay(persistReplay(provider), actual);
     });
 
     test('dynamodb', async () => {});
