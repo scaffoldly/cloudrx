@@ -72,7 +72,7 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-class DynamoDBImpl<
+export class DynamoDBImpl<
   THashKey extends string = 'hashKey',
   TRangeKey extends string = 'rangeKey',
 > extends CloudProvider<
