@@ -46,14 +46,29 @@ export class Abort extends AbortController {
     if (signal) {
       signal.addEventListener('abort', () => this.abort(signal.reason));
     } else {
+      // Hook into standard Node.js process events
+      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'].forEach((signalType) => {
+        process.on(signalType, () => {
+          this.abort(new Error(`Aborted by ${signalType}`));
+        });
+      });
+
+      // Hook into process exit events
+      process.on('beforeExit', (code) => {
+        this.abort(new Error(`Process exiting with code: ${code}`));
+      });
+
+      process.on('exit', (code) => {
+        this.abort(new Error(`Process exit with code: ${code}`));
+      });
+
+      // Hook into error events
       process.on('uncaughtException', (error) => {
         this.abort(error);
       });
+
       process.on('unhandledRejection', (reason) => {
         this.abort(reason);
-      });
-      process.on('beforeExit', (code) => {
-        this.abort(new Error(`Process exiting with code: ${code}`));
       });
     }
   }
@@ -108,6 +123,8 @@ export abstract class CloudProvider<TEvent, TMarker>
     public readonly id: string,
     opts?: CloudOptions
   ) {
+    this._events.setMaxListeners(100);
+
     this._logger = opts?.logger ?? console;
     this._signal = opts?.signal ?? new Abort().signal;
 
@@ -216,10 +233,12 @@ export abstract class CloudProvider<TEvent, TMarker>
         shareReplay(1)
       );
 
+      const stream$ = this.stream();
+
       this.logger.debug?.(`[${this.id}] Waiting for stream to start`);
       this._events.once('start', () => {
         this.logger.debug?.(`[${this.id}] Stream started, setting up matcher`);
-        match = combineLatest([this.stream(), matcher$])
+        match = combineLatest([stream$, matcher$])
           .pipe(
             takeUntil(fromEvent(this._events, 'stop')),
             filter(([event, matcher]) => matcher(event)),
@@ -240,7 +259,7 @@ export abstract class CloudProvider<TEvent, TMarker>
           });
       });
 
-      stream = this.stream()
+      stream = stream$
         .pipe(takeUntil(fromEvent(this._events, 'start')))
         .subscribe();
 

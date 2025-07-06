@@ -54,59 +54,8 @@ describe('aws-dynamodb', () => {
     expect(storedData).toEqual(testData);
   });
 
-  // test('streams-an-item', async () => {
-  //   const instance = await firstValueFrom(DynamoDB.from(testId(), options));
-  //   const stream = await firstValueFrom(instance.stream());
-  //   const events: _Record[] = [];
-  //   stream.on('event', (event) => {
-  //     events.push(event);
-  //   });
-  //   const testData: Data = { message: 'test', timestamp: performance.now() };
-  //   const storedData = await firstValueFrom(instance.store(testData));
-  //   expect(storedData).toEqual(testData);
-  //   await stream.stop();
-  //   expect(events.length).toBe(1);
-  //   expect(events[0]).toBeDefined();
-  //   const unmarshalled = instance.unmarshall<Data>(events[0]!);
-  //   expect(unmarshalled.message).toEqual(testData.message);
-  //   expect(unmarshalled.timestamp).toEqual(testData.timestamp);
-  // });
-  // test('shadows-a-streamed-item', async () => {
-  //   const options: DynamoDBOptions = {
-  //     client: container.getClient(),
-  //     hashKey: 'hashKey',
-  //     rangeKey: 'rangeKey',
-  //     signal: abort.signal,
-  //     logger,
-  //   };
-  //   const instance1 = await firstValueFrom(DynamoDB.from(testId(), options));
-  //   const stream1$ = instance1.stream();
-  //   const stream1 = await firstValueFrom(stream1$);
-  //   const instance2 = await firstValueFrom(DynamoDB.from(testId(), options));
-  //   const stream2$ = instance2.stream();
-  //   const stream2 = await firstValueFrom(stream2$);
-  //   expect(instance1).toBe(instance2);
-  //   expect(stream1).toBe(stream2);
-  //   const events1: _Record[] = [];
-  //   stream1.on('event', (event) => {
-  //     events1.push(event);
-  //   });
-  //   const events2: _Record[] = [];
-  //   stream2.on('event', (event) => {
-  //     events2.push(event);
-  //   });
-  //   const testData: Data = { message: 'test', timestamp: performance.now() };
-  //   const storedData = await firstValueFrom(instance1.store(testData));
-  //   expect(storedData).toEqual(testData);
-  //   await stream1.stop();
-  //   await stream2.stop();
-  //   expect(events1).toEqual(events2);
-  //   const unmarshalled1 = instance1.unmarshall<Data>(events1[0]!);
-  //   const unmarshalled2 = instance1.unmarshall<Data>(events2[0]!);
-  //   expect(unmarshalled1).toEqual(unmarshalled2);
-  // });
   test('stores-items', async () => {
-    const NUM_ITEMS = 10;
+    const NUM_ITEMS = 20;
 
     const instance = await firstValueFrom(DynamoDB.from(testId(), options));
     const testItems: Data[] = [];
@@ -127,88 +76,6 @@ describe('aws-dynamodb', () => {
       expect(storedItems[i]).toEqual(testItems[i]);
     }
   });
-
-  // test('global-abort-cascades', async () => {
-  //   const testAbort = new AbortController();
-  //   const options: DynamoDBOptions = {
-  //     client: container.getClient(),
-  //     signal: testAbort.signal,
-  //   };
-
-  //   // Create multiple instances
-  //   const instance1 = await firstValueFrom(
-  //     DynamoDB.from(`${testId()}-1`, options)
-  //   );
-
-  //   const instance2 = await firstValueFrom(
-  //     DynamoDB.from(`${testId()}-2`, options)
-  //   );
-
-  //   const instance3 = await firstValueFrom(
-  //     DynamoDB.from(`${testId()}-3`, options)
-  //   );
-
-  //   const instances = [instance1, instance2, instance3];
-  //   // Start streams for all instances
-  //   const streamControllers = await Promise.all(
-  //     instances.map((instance) => firstValueFrom(instance.stream()))
-  //   );
-
-  //   // Track stream events for all instances
-  //   const streamStarted = [false, false, false];
-  //   const streamStopped = [false, false, false];
-  //   streamControllers.forEach((controller, index) => {
-  //     controller.on('start', () => {
-  //       streamStarted[index] = true;
-  //     });
-  //     controller.on('stop', () => {
-  //       streamStopped[index] = true;
-  //     });
-  //   });
-  //   // Wait for all streams to start
-  //   await Promise.all(
-  //     streamControllers.map(
-  //       (controller, index) =>
-  //         new Promise<void>((resolve) => {
-  //           if (streamStarted[index]) {
-  //             resolve();
-  //           } else {
-  //             controller.once('start', () => resolve());
-  //           }
-  //         })
-  //     )
-  //   );
-  //   // Verify all streams are started
-  //   expect(streamStarted).toEqual([true, true, true]);
-  //   expect(streamStopped).toEqual([false, false, false]);
-  //   // Now abort the global controller
-  //   testAbort.abort('test abort');
-  //   // Wait for all streams to stop
-  //   await Promise.all(
-  //     streamControllers.map(
-  //       (controller, index) =>
-  //         new Promise<void>((resolve) => {
-  //           if (streamStopped[index]) {
-  //             resolve();
-  //           } else {
-  //             controller.once('stop', () => resolve());
-  //             // Also set a timeout in case it doesn't stop
-  //             setTimeout(resolve, 500);
-  //           }
-  //         })
-  //     )
-  //   );
-  //   // Verify that all streams were stopped
-  //   expect(streamStopped).toEqual([true, true, true]);
-  //   // Verify all stream controller signals are aborted
-  //   streamControllers.forEach((controller) => {
-  //     expect(controller.signal.aborted).toBe(true);
-  //   });
-  //   // Verify all providers' internal signals are aborted
-  //   instances.forEach((instance) => {
-  //     expect(instance['signal'].aborted).toBe(true);
-  //   });
-  // });
 
   test('shard-emits-once', async () => {
     const mockStreamClient = {
