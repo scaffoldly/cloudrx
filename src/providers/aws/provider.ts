@@ -47,7 +47,7 @@ import {
 } from '@aws-sdk/client-dynamodb-streams';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
-  DynamoDBDocumentClient,
+  DynamoDBDocument,
   PutCommand,
   TranslateConfig,
 } from '@aws-sdk/lib-dynamodb';
@@ -100,8 +100,8 @@ export class DynamoDB extends CloudProvider<
     this._pollInterval = opts?.pollInterval || 5000;
   }
 
-  get client(): DynamoDBDocumentClient {
-    return this._client;
+  get client(): DynamoDBDocument {
+    return DynamoDBDocument.from(this._client, this.translation);
   }
 
   get tableName(): string {
