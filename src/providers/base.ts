@@ -74,8 +74,10 @@ export class Abort extends AbortController {
   }
 
   override abort(reason?: unknown): void {
-    // eslint-disable-next-line no-console
-    console.log('!!! got abort signal:', reason);
+    // Use the native AbortError if no reason provided
+    if (!reason) {
+      reason = new DOMException('Aborted', 'AbortError');
+    }
     super.abort(reason);
   }
 }
@@ -83,6 +85,7 @@ export class Abort extends AbortController {
 export class StreamEvent extends EventEmitter<{
   start: [];
   end: [];
+  stop: [];
 }> {}
 
 /**
@@ -129,8 +132,20 @@ export abstract class CloudProvider<TEvent, TMarker>
     this._signal = opts?.signal ?? new Abort().signal;
 
     this._signal.addEventListener('abort', () => {
+      // Properly clean up resources on abort
       this._events.emit('end');
+      this._events.emit('stop'); // Ensure any stream subscriptions are stopped
       delete CloudProvider.instances[this.id];
+      
+      // Signal abortion reason for debugging
+      const reason = this._signal.reason;
+      if (reason instanceof Error && reason.name === 'AbortError') {
+        // Normal shutdown, use debug level logging
+        this.logger.debug?.(`[${this.id}] Provider aborted: normal shutdown`);
+      } else {
+        // Abnormal shutdown, use error level logging
+        this.logger.error?.(`[${this.id}] Provider aborted:`, reason);
+      }
     });
   }
 
@@ -178,6 +193,12 @@ export abstract class CloudProvider<TEvent, TMarker>
 
   public stream(): Observable<TEvent> {
     return new Observable<TEvent>((subscriber) => {
+      // Check for already aborted signal first
+      if (this._signal.aborted) {
+        subscriber.complete();
+        return () => {};
+      }
+
       if (!this._stream$) {
         this.logger.debug?.(`[${this.id}] Creating new 'latest' stream`);
         this._stream$ = this._stream(false).pipe(
@@ -192,21 +213,31 @@ export abstract class CloudProvider<TEvent, TMarker>
       const subscription = this._stream$
         .pipe(
           takeUntil(fromEvent(this._events, 'stop')),
+          takeUntil(fromEvent(this._signal, 'abort')),
           tap((events) => {
-            if (events.length > 0) {
+            // Only emit events if not aborted
+            if (!this._signal.aborted && events.length > 0) {
               this.logger.debug?.(
                 `[${this.id}] Stream emitted ${events.length} events`
               );
             }
-            this._events.emit('start');
+            if (!this._signal.aborted) {
+              this._events.emit('start');
+            }
           }),
           concatAll()
         )
         .subscribe({
-          next: (event) => subscriber.next(event),
+          next: (event) => {
+            if (!this._signal.aborted) {
+              subscriber.next(event);
+            }
+          },
           error: (error) => {
-            this.logger.debug?.(`[${this.id}] Stream error:`, error);
-            subscriber.error(error);
+            if (!this._signal.aborted) {
+              this.logger.debug?.(`[${this.id}] Stream error:`, error);
+              subscriber.error(error);
+            }
           },
           complete: () => {
             this.logger.debug?.(`[${this.id}] Stream completed`);
@@ -260,7 +291,10 @@ export abstract class CloudProvider<TEvent, TMarker>
       });
 
       stream = stream$
-        .pipe(takeUntil(fromEvent(this._events, 'start')))
+        .pipe(
+          takeUntil(fromEvent(this._events, 'start')),
+          takeUntil(fromEvent(this._signal, 'abort'))
+        )
         .subscribe();
 
       return () => {

@@ -62,14 +62,24 @@ export class DynamoDBLocalContainer {
   }
 
   async stop(): Promise<void> {
-    if (this.startedContainer) {
-      this.logger.info?.('Stopping DynamoDB Local container...');
-      await this.startedContainer.stop();
-      this.startedContainer = null;
-    }
-    if (this.client) {
-      this.client.destroy();
-      this.client = null;
+    try {
+      if (this.startedContainer) {
+        this.logger.info?.('Stopping DynamoDB Local container...');
+        await this.startedContainer.stop();
+        this.startedContainer = null;
+      }
+    } catch (error) {
+      // Suppress container stop errors
+      this.logger.error?.('Failed to stop DynamoDB Local container:', error);
+    } finally {
+      if (this.client) {
+        try {
+          this.client.destroy();
+        } catch (e) {
+          // Suppress client destroy errors
+        }
+        this.client = null;
+      }
     }
   }
 

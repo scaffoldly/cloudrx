@@ -129,6 +129,9 @@ export class DynamoDB extends CloudProvider<
 
   get streamClient(): DynamoDBStreamsClient {
     if (!this._streamClient) {
+      if (this.signal.aborted) {
+        throw new FatalError('Provider aborted');
+      }
       throw new FatalError('Stream client is not yet available');
     }
     return this._streamClient;
@@ -149,43 +152,95 @@ export class DynamoDB extends CloudProvider<
       return DynamoDB.shards[id];
     }
 
-    DynamoDB.shards[id] = timer(0, this.pollInterval || 5000).pipe(
-      takeUntil(fromEvent(this.signal, 'abort')),
-      switchMap((tick) => {
-        this.logger.debug?.(`[${this.id}] [iter:${tick}] Stream refresh...`);
-        return from(
-          this.streamClient
-            .send(new DescribeStreamCommand({ StreamArn: this.streamArn }))
-            .then((response) => {
-              return response.StreamDescription?.Shards || [];
-            })
-            .catch((error) => {
-              this.logger.error?.(
-                `[${this.id}] Failed to describe stream:`,
-                error
+    // Create a new observable with proper cleanup
+    DynamoDB.shards[id] = new Observable<Shard>((subscriber) => {
+      // Use a local abort controller to clean up only this observer
+      const localAbort = new AbortController();
+      const abortSubscription = fromEvent(this.signal, 'abort').subscribe(() => {
+        localAbort.abort(this.signal.reason);
+        delete DynamoDB.shards[id]; // Remove from singleton cache on abort
+      });
+
+      // Only poll if we're not already aborted
+      if (!this.signal.aborted) {
+        // Create the main subscription with proper signal handling
+        const timerSubscription = timer(0, this.pollInterval || 5000)
+          .pipe(
+            // These takeUntil operators ensure we stop when either signal aborts
+            takeUntil(fromEvent(localAbort.signal, 'abort')),
+            takeUntil(fromEvent(this.signal, 'abort')),
+            switchMap((tick) => {
+              if (this.signal.aborted || localAbort.signal.aborted) {
+                return []; // Return empty if aborted to prevent further processing
+              }
+              
+              return from(
+                this.streamClient
+                  .send(new DescribeStreamCommand({ StreamArn: this.streamArn }))
+                  .then((response) => {
+                    return response.StreamDescription?.Shards || [];
+                  })
+                  .catch((error) => {
+                    // Only log if we're not aborted (prevents post-test logs)
+                    if (!this.signal.aborted && !localAbort.signal.aborted) {
+                      this.logger.error?.(
+                        `[${this.id}] Failed to describe stream:`,
+                        error
+                      );
+                    }
+                    return [];
+                  })
               );
-              return [];
-            })
-        );
-      }),
-      switchMap((shards) => from(shards)),
-      scan(
-        (
-          acc: { seenShardIds: Set<string>; newShard: Shard | null },
-          shard: Shard
-        ) => {
-          if (shard.ShardId && !acc.seenShardIds.has(shard.ShardId)) {
-            acc.seenShardIds.add(shard.ShardId);
-            return { seenShardIds: acc.seenShardIds, newShard: shard };
+            }),
+            // Don't process further if we're already aborted
+            filter(() => !this.signal.aborted && !localAbort.signal.aborted),
+            switchMap((shards) => from(shards)),
+            scan(
+              (
+                acc: { seenShardIds: Set<string>; newShard: Shard | null },
+                shard: Shard
+              ) => {
+                if (shard.ShardId && !acc.seenShardIds.has(shard.ShardId)) {
+                  acc.seenShardIds.add(shard.ShardId);
+                  return { seenShardIds: acc.seenShardIds, newShard: shard };
+                }
+                return { seenShardIds: acc.seenShardIds, newShard: null };
+              },
+              { seenShardIds: new Set<string>(), newShard: null }
+            ),
+            filter(({ newShard }) => newShard !== null),
+            map(({ newShard }) => newShard!)
+          )
+          .subscribe({
+            next: (shard) => subscriber.next(shard),
+            error: (err) => {
+              if (!this.signal.aborted && !localAbort.signal.aborted) {
+                subscriber.error(err);
+              }
+            },
+            complete: () => subscriber.complete()
+          });
+
+        // Return cleanup function
+        return () => {
+          timerSubscription.unsubscribe();
+          abortSubscription.unsubscribe();
+          localAbort.abort(new DOMException('Observer cleanup', 'AbortError'));
+          
+          // Check if we need to clean up the singleton cache
+          if (this.signal.aborted) {
+            delete DynamoDB.shards[id];
           }
-          return { seenShardIds: acc.seenShardIds, newShard: null };
-        },
-        { seenShardIds: new Set<string>(), newShard: null }
-      ),
-      filter(({ newShard }) => newShard !== null),
-      map(({ newShard }) => newShard!),
-      shareReplay(1)
-    );
+        };
+      } else {
+        // Already aborted, just clean up
+        abortSubscription.unsubscribe();
+        subscriber.complete();
+        return () => {
+          delete DynamoDB.shards[id];
+        };
+      }
+    }).pipe(shareReplay(1));
 
     return DynamoDB.shards[id];
   }
@@ -476,6 +531,7 @@ export class DynamoDB extends CloudProvider<
       subscriptions.push(
         this.shards
           .pipe(
+            takeUntil(fromEvent(this.signal, 'abort')),
             concatMap((shard) =>
               from(
                 this.streamClient.send(
@@ -541,7 +597,7 @@ export class DynamoDB extends CloudProvider<
       );
 
       return () => {
-        this.logger.debug?.(`[${this.id}] Stream cleanup`);
+        // Cleanup all subscriptions and complete the subject
         subscriptions.forEach((sub) => sub.unsubscribe());
         iterator.complete();
       };

@@ -10,21 +10,42 @@ describe('aws-dynamodb', () => {
   type Data = { message: string; timestamp: number };
 
   beforeAll(async () => {
-    container = new DynamoDBLocalContainer(console);
-    await container.start();
-    options = {
-      client: container.getClient(),
-    };
+    try {
+      container = new DynamoDBLocalContainer(console);
+      await container.start();
+      options = {
+        client: container.getClient(),
+        // Add a 500ms timeout to prevent long-running tests
+        signal: AbortSignal.timeout(500),
+      };
+    } catch (error) {
+      console.error('Failed to start container:', error);
+      throw error;
+    }
   });
 
-  beforeEach(() => {});
+  beforeEach(() => {
+    // Clean up any singleton instances to prevent test pollution
+    jest.restoreAllMocks();
+  });
 
-  afterEach(() => {});
+  afterEach(() => {
+    // Clean up any singleton instances to prevent test pollution
+    jest.restoreAllMocks();
+  });
 
   afterAll(async () => {
+    // Create an abort controller to signal test completion
+    const abortController = new AbortController();
+    abortController.abort(new DOMException('Test completed', 'AbortError'));
+
     if (container) {
       await container.stop();
     }
+    
+    // Clean up DynamoDB.shards to prevent memory leaks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (DynamoDB as any).shards = {};
   });
 
   test('is-a-singleton', async () => {
@@ -108,35 +129,49 @@ describe('aws-dynamodb', () => {
         StreamDescription: { Shards: [shard1, shard2, shard3] },
       });
 
+    // Create an abort controller for this test
+    const abortController = new AbortController();
+
     const options: DynamoDBOptions = {
       client: container.getClient(),
       pollInterval: 1000, // 1 second for faster testing
+      signal: abortController.signal, // Use the abort controller's signal
     };
 
     const provider = await firstValueFrom(DynamoDB.from(testId(), options));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (provider as any)._streamClient = mockStreamClient;
     const emittedShards: Shard[] = [];
-    const subscription = provider.shards.subscribe((shard) => {
-      emittedShards.push(shard);
-    });
+    
+    try {
+      const subscription = provider.shards.subscribe((shard) => {
+        emittedShards.push(shard);
+      });
 
-    await new Promise((resolve) => setTimeout(resolve, 6000)); // 6 seconds with 1s poll = 6 cycles
+      // Use promise with timeout for better test control
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          // Clean up everything after we're done
+          subscription.unsubscribe();
+          resolve();
+        }, 6000); // 6 seconds with 1s poll = 6 cycles
+        
+        // Clean up timer if test ends early
+        subscription.add(() => clearTimeout(timeout));
+      });
 
-    subscription.unsubscribe();
-    expect(emittedShards).toHaveLength(3);
-    expect(emittedShards.filter((s) => s.ShardId === 'shard-1')).toHaveLength(
-      1
-    );
-    expect(emittedShards.filter((s) => s.ShardId === 'shard-2')).toHaveLength(
-      1
-    );
-    expect(emittedShards.filter((s) => s.ShardId === 'shard-3')).toHaveLength(
-      1
-    );
+      // Assertions
+      expect(emittedShards).toHaveLength(3);
+      expect(emittedShards.filter((s) => s.ShardId === 'shard-1')).toHaveLength(1);
+      expect(emittedShards.filter((s) => s.ShardId === 'shard-2')).toHaveLength(1);
+      expect(emittedShards.filter((s) => s.ShardId === 'shard-3')).toHaveLength(1);
 
-    // Verify the shard IDs are the expected ones
-    const shardIds = emittedShards.map((s) => s.ShardId).sort();
-    expect(shardIds).toEqual(['shard-1', 'shard-2', 'shard-3']);
+      // Verify the shard IDs are the expected ones
+      const shardIds = emittedShards.map((s) => s.ShardId).sort();
+      expect(shardIds).toEqual(['shard-1', 'shard-2', 'shard-3']);
+    } finally {
+      // Always abort the controller to clean up resources
+      abortController.abort();
+    }
   });
 });
