@@ -19,13 +19,13 @@ import {
   asyncScheduler,
   catchError,
   combineLatest,
+  concatMap,
   defer,
   filter,
   forkJoin,
   from,
   fromEvent,
   map,
-  mergeMap,
   Observable,
   of,
   scan,
@@ -476,7 +476,7 @@ export class DynamoDB extends CloudProvider<
       subscriptions.push(
         this.shards
           .pipe(
-            mergeMap((shard) =>
+            concatMap((shard) =>
               from(
                 this.streamClient.send(
                   new GetShardIteratorCommand({
@@ -507,7 +507,7 @@ export class DynamoDB extends CloudProvider<
         iterator
           .pipe(
             takeUntil(fromEvent(this.signal, 'abort')),
-            mergeMap((position) =>
+            concatMap((position) =>
               from(
                 this.streamClient.send(
                   new GetRecordsCommand({ ShardIterator: position })
