@@ -5,10 +5,10 @@ import {
   Subject,
   MonoTypeOperatorFunction,
 } from 'rxjs';
-import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
+import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { persist, persistReplay } from '@operators';
 import { DynamoDB, DynamoDBOptions, Memory } from '@providers';
-import { testId } from '../../setup';
+import { testId } from '../setup';
 
 type Data = { message: string; timestamp: number };
 

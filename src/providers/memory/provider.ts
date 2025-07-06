@@ -8,6 +8,7 @@ import {
 } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { CloudProvider, Streamed, Matcher, CloudOptions } from '../base';
+import crypto from 'crypto';
 
 type MemoryDelays = {
   init?: number; // Initialization delay in milliseconds
