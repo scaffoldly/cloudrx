@@ -52,10 +52,13 @@ import {
   TranslateConfig,
 } from '@aws-sdk/lib-dynamodb';
 
-export type DynamoDBOptions = CloudOptions & {
+export type DynamoDBOptions<
+  THashKey extends string = 'hashKey',
+  TRangeKey extends string = 'rangeKey',
+> = CloudOptions & {
   client?: DynamoDBClient;
-  hashKey?: string;
-  rangeKey?: string;
+  hashKey?: THashKey;
+  rangeKey?: TRangeKey;
   ttlAttribute?: string;
   pollInterval?: number;
 };
@@ -69,7 +72,10 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-export class DynamoDB extends CloudProvider<
+export class DynamoDB<
+  THashKey extends string = 'hashKey',
+  TRangeKey extends string = 'rangeKey',
+> extends CloudProvider<
   _Record,
   NonNullable<_Record['dynamodb']>['SequenceNumber']
 > {
@@ -77,8 +83,8 @@ export class DynamoDB extends CloudProvider<
 
   private _client: DynamoDBClient;
   private _streamClient?: DynamoDBStreamsClient;
-  private _hashKey: string;
-  private _rangeKey: string;
+  private _hashKey: THashKey;
+  private _rangeKey: TRangeKey;
   private _ttlAttribute: string;
   private _pollInterval: number;
   private _tableArn?: string;
@@ -91,11 +97,11 @@ export class DynamoDB extends CloudProvider<
     },
   };
 
-  constructor(id: string, opts?: DynamoDBOptions) {
+  constructor(id: string, opts?: DynamoDBOptions<THashKey, TRangeKey>) {
     super(id, opts);
     this._client = opts?.client || new DynamoDBClient();
-    this._hashKey = opts?.hashKey || 'hashKey';
-    this._rangeKey = opts?.rangeKey || 'rangeKey';
+    this._hashKey = opts?.hashKey || ('hashKey' as THashKey);
+    this._rangeKey = opts?.rangeKey || ('rangeKey' as TRangeKey);
     this._ttlAttribute = opts?.ttlAttribute || 'expires';
     this._pollInterval = opts?.pollInterval || 5000;
   }
@@ -115,11 +121,11 @@ export class DynamoDB extends CloudProvider<
     return this._tableArn;
   }
 
-  get hashKey(): string {
+  get hashKey(): THashKey {
     return this._hashKey;
   }
 
-  get rangeKey(): string {
+  get rangeKey(): TRangeKey {
     return this._rangeKey;
   }
 
