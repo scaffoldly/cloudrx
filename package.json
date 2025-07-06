@@ -29,7 +29,7 @@
     "subjects",
     "typescript"
   ],
-  "author": "",
+  "author": "Scaffoldly <github.com/scaffoldly>",
   "license": "GPL-3.0",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.823.0",
@@ -93,6 +93,7 @@
         "coverageDirectory": "coverage",
         "moduleNameMapper": {
           "^@operators$": "<rootDir>/src/operators/index.ts",
+          "^@subjects$": "<rootDir>/src/subjects/index.ts",
           "^@providers$": "<rootDir>/src/providers/index.ts",
           "^@util$": "<rootDir>/src/util/index.ts"
         }

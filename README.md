@@ -1,8 +1,6 @@
 # CloudRx
 
-RxJS extensions with cloud-backed subjects and observables for persistence and orchestration.
-
-CloudRx extends the RxJS ecosystem by providing reactive streams that automatically persist state to cloud storage and enable distributed orchestration across multiple environments. Perfect for building resilient, scalable applications that need to maintain state across restarts, crashes, or distributed deployments.
+TypeScript library for streaming cloud provider events using RxJS. It provides reactive interfaces for cloud services like DynamoDB Streams with automatic persistence and replay capabilities.
 
 ## Installation
 
@@ -12,39 +10,89 @@ npm install cloudrx
 
 ## Quick Start
 
-```typescript
-import { CloudSubject, CloudObservable } from 'cloudrx';
+### Basic DynamoDB Streaming with `persist` Operator
 
-// Create a subject backed by cloud storage
-const cloudSubject = new CloudSubject('my-stream', {
-  provider: 'aws-s3',
-  bucket: 'my-app-state',
+```typescript
+import { of } from 'rxjs';
+import { DynamoDBProvider, persist } from 'cloudrx';
+
+// Create DynamoDB provider
+const provider$ = DynamoDBProvider.from('my-table', {
+  client: dynamoDbClient,
+  hashKey: 'id',
+  rangeKey: 'timestamp'
 });
 
-// Subscribe to persisted events
-cloudSubject.subscribe((value) => {
-  console.log('Received:', value);
+// Data to persist
+const data = [
+  { message: 'hello', timestamp: Date.now() },
+  { message: 'world', timestamp: Date.now() + 1 }
+];
+
+// Persist data and get it back from the stream
+const result$ = of(...data).pipe(
+  persist(provider$)
+);
+
+// Subscribe to get confirmed stored items
+result$.subscribe(item => {
+  console.log('Item stored and confirmed:', item);
+});
+```
+
+### CloudSubject for Reactive Persistence
+
+```typescript
+import { CloudSubject } from 'cloudrx';
+import { DynamoDBProvider } from 'cloudrx/providers';
+
+// Create a cloud-backed subject
+const subject = new CloudSubject(
+  DynamoDBProvider.from('events-table', options)
+);
+
+// Subscribe to persisted events (includes replay)
+subject.subscribe(event => {
+  console.log('Received event:', event);
 });
 
 // Emit values that are automatically persisted
-cloudSubject.next({ message: 'Hello CloudRx!' });
+subject.next({ type: 'user-action', data: { userId: 123 } });
 ```
 
 ## Features
 
-- 🌩️ **Cloud-Backed Persistence** - Subjects and observables that automatically persist to cloud storage
-- 🔄 **RxJS Compatible** - Drop-in replacements for standard RxJS subjects and observables
-- 🚀 **Multi-Provider Support** - AWS, Azure, GCP, and custom storage providers
-- 🎯 **Event Replay** - Automatic replay of persisted events on subscription
-- 🔗 **Distributed Orchestration** - Coordinate reactive streams across multiple instances
+- 🌩️ **DynamoDB Streams Integration** - Real-time streaming from DynamoDB with automatic persistence
+- 🔄 **RxJS Operators** - `persist` and `persistReplay` operators for seamless integration
+- 📡 **CloudSubject** - Cloud-backed Subject with automatic persistence and replay
+- 🎯 **Event Replay** - Automatic replay of persisted events on subscription using DynamoDB Streams
+- 🚀 **Reactive Persistence** - Store and retrieve data reactively with Observable patterns
 - 📦 **TypeScript First** - Full type safety and IntelliSense support
-- 🧪 **Comprehensive Testing** - Battle-tested with extensive test coverage
+- 🧪 **Battle Tested** - Comprehensive test coverage with DynamoDB Local integration
+
+## Core Components
+
+### Operators
+
+- **`persist(provider$)`** - Stores each emitted value and returns it after successful persistence
+- **`persistReplay(provider$)`** - Stores values and replays all previously persisted items on subscription
+
+### Providers
+
+- **`DynamoDBProvider`** - AWS DynamoDB with DynamoDB Streams for real-time event streaming
+  - Configurable TTL for automatic cleanup
+  - Shard-based streaming with automatic discovery
+  - Error handling with retry/fatal error distinction
+
+### Subjects
+
+- **`CloudSubject`** - RxJS Subject that automatically persists emissions and replays persisted data
 
 ## Development
 
 ### Prerequisites
 
-- Node.js >= 16
+- Node.js >= 20
 - npm or yarn
 
 ### Setup
@@ -60,28 +108,21 @@ npm install
 # Build the project
 npm run build
 
-# Run unit tests
-npm run test
-
-# Run integration tests
-npm run test:integration
-
-# Run all tests
-npm run test:all
+# Run tests
+npm test
 ```
 
 ### Available Scripts
 
 - `npm run build` - Compile TypeScript
-- `npm run dev` - Watch mode compilation
-- `npm run test` - Run unit tests
-- `npm run test:watch` - Run unit tests in watch mode
-- `npm run test:integration` - Run integration tests
-- `npm run test:integration:watch` - Run integration tests in watch mode
-- `npm run test:all` - Run all tests (unit + integration)
-- `npm run lint` - Check code quality
-- `npm run lint:fix` - Fix linting issues
-- `npm run format` - Format code with Prettier
+- `npm test` - Run unit tests (info level logs)
+- `npm test -- --verbose` - Run with debug level logs  
+- `npm test -- --silent` - Run with no logs
+- `npm run test:watch` - Watch mode for development
+- `npm run test:integration` - Run integration tests with DynamoDB Local
+- `npm run lint` - Run ESLint
+- `npm run lint:fix` - Fix ESLint issues
+- `npx tsc --noEmit` - TypeScript compilation check
 
 ## Contributing
 

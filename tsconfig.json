@@ -23,9 +23,10 @@
     "paths": {
       "@operators": ["operators/index.ts"],
       "@providers": ["providers/index.ts"],
+      "@subjects": ["subjects/index.ts"],
       "@util": ["util/index.ts"]
     }
   },
-  "include": ["src/**/*", "tests/**/*", "tests/**/*", "dumpster/dynamodb-provider.integration.test.ts", "dumpster/dynamodb-strong-consistency-timing.integration.test.ts", "dumpster/dynamodb-strong-consistency.integration.test.ts", "dumpster/dynamodb-cloud-subject.integration.test.ts"],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
 }
