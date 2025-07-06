@@ -65,9 +65,69 @@ jobs:
         with:
           fail_ci_if_error: false
 
-  report-failures:
+  prerelease:
     runs-on: ubuntu-latest
     needs: [quality-checks, unit-tests]
+    name: Pre-release to NPM
+    if: github.ref == 'refs/heads/main' && success() && !contains(github.event.head_commit.message, '[skip-prerelease]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Generate pre-release version
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          PRERELEASE_VERSION="${CURRENT_VERSION}-beta.${TIMESTAMP}.${SHORT_SHA}"
+          echo "version=${PRERELEASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "current=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Update package.json version
+        run: |
+          npm version ${{ steps.version.outputs.version }} --no-git-tag-version
+
+      - name: Publish pre-release to NPM
+        run: npm publish --tag beta
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create pre-release summary
+        run: |
+          echo "## 🚀 Pre-release Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** cloudrx" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** beta" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${GITHUB_SHA:0:7}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Install the pre-release version:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npm install cloudrx@beta" >> $GITHUB_STEP_SUMMARY
+          echo "# or specific version:" >> $GITHUB_STEP_SUMMARY
+          echo "npm install cloudrx@${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** Add \`[skip-prerelease]\` to commit message to skip pre-release publishing." >> $GITHUB_STEP_SUMMARY
+
+  report-failures:
+    runs-on: ubuntu-latest
+    needs: [quality-checks, unit-tests, prerelease]
     name: Report Failures
     if: always() && github.ref == 'refs/heads/main'
 
@@ -81,8 +141,9 @@ jobs:
           script: |
             const qualityChecksFailed = '${{ needs.quality-checks.result }}' === 'failure';
             const unitTestsFailed = '${{ needs.unit-tests.result }}' === 'failure';
+            const prereleaseFailed = '${{ needs.prerelease.result }}' === 'failure';
 
-            if(!qualityChecksFailed && !unitTestsFailed) {
+            if(!qualityChecksFailed && !unitTestsFailed && !prereleaseFailed) {
               console.log('No failures detected.');
               return;
             }
@@ -99,11 +160,14 @@ jobs:
             if (unitTestsFailed) {
               issueBody += `- ❌ Unit Tests\n`;
             }
+            if (prereleaseFailed) {
+              issueBody += `- ❌ Pre-release Publishing\n`;
+            }
 
             issueBody += `\n### Next Steps:\n`;
             issueBody += `1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
             issueBody += `2. Check the logs for specific error details\n`;
-            issueBody += `3. Fix the failing tests\n`;
+            issueBody += `3. Fix the failing tests or publishing issues\n`;
             issueBody += `4. Close this issue once resolved\n\n`;
             issueBody += `*This issue was automatically created by GitHub Actions.*`;
 

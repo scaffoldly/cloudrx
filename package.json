@@ -1,7 +1,15 @@
 {
   "name": "cloudrx",
   "version": "0.1.0",
-  "description": "RxJS extensions with cloud-backed subjects and observables for persistence and orchestration",
+  "description": "TypeScript library for streaming cloud provider events using RxJS with automatic persistence and replay capabilities",
+  "homepage": "https://github.com/scaffoldly/cloudrx#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scaffoldly/cloudrx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scaffoldly/cloudrx/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
