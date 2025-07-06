@@ -71,13 +71,32 @@ module.exports = [
   {
     files: ['tests/**/*.ts', 'integration-tests/**/*.ts'],
     languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2020,
+        sourceType: 'module',
+        project: './tests/tsconfig.json',
+      },
       globals: {
         ...globals.node,
         ...globals.jest,
       },
     },
+    plugins: {
+      '@typescript-eslint': typescript,
+      prettier,
+    },
     rules: {
+      ...typescript.configs.recommended.rules,
+      ...prettierConfig.rules,
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+      ],
+      '@typescript-eslint/explicit-function-return-type': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       'no-console': 'off', // Allow console.log in tests
+      'prettier/prettier': 'error',
     },
   },
   
