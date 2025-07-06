@@ -72,7 +72,7 @@ export type DynamoDBStoredData<T> = {
   expires?: number;
 };
 
-export class DynamoDB<
+class DynamoDBImpl<
   THashKey extends string = 'hashKey',
   TRangeKey extends string = 'rangeKey',
 > extends CloudProvider<
@@ -154,12 +154,12 @@ export class DynamoDB<
   get shards(): Observable<Shard> {
     const { id } = this;
 
-    if (DynamoDB.shards[id]) {
+    if (DynamoDBImpl.shards[id]) {
       this.logger.debug?.(`[${this.id}] Returning existing shard observable`);
-      return DynamoDB.shards[id];
+      return DynamoDBImpl.shards[id];
     }
 
-    DynamoDB.shards[id] = timer(0, this.pollInterval || 5000).pipe(
+    DynamoDBImpl.shards[id] = timer(0, this.pollInterval || 5000).pipe(
       takeUntil(fromEvent(this.signal, 'abort')),
       switchMap((tick) => {
         this.logger.debug?.(`[${this.id}] [iter:${tick}] Stream refresh...`);
@@ -197,7 +197,7 @@ export class DynamoDB<
       shareReplay(1)
     );
 
-    return DynamoDB.shards[id];
+    return DynamoDBImpl.shards[id];
   }
 
   protected _init(): Observable<this> {
@@ -635,3 +635,25 @@ export class DynamoDB<
     };
   }
 }
+
+type DynamoDBConstructor = {
+  new <
+    THashKey extends string = 'hashKey',
+    TRangeKey extends string = 'rangeKey',
+  >(
+    id: string,
+    opts?: DynamoDBOptions<THashKey, TRangeKey>
+  ): DynamoDBImpl<THashKey, TRangeKey>;
+
+  from<
+    THashKey extends string = 'hashKey',
+    TRangeKey extends string = 'rangeKey',
+  >(
+    id: string,
+    opts?: DynamoDBOptions<THashKey, TRangeKey>
+  ): Observable<DynamoDBImpl<THashKey, TRangeKey>>;
+};
+
+// Export DynamoDB with enhanced typing
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const DynamoDB = DynamoDBImpl as any as DynamoDBConstructor;
