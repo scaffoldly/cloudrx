@@ -7,29 +7,12 @@ import {
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../../providers/aws/dynamodb/local';
 import { persist, persistReplay } from '@operators';
-import { Memory } from '@providers';
+import { DynamoDB, DynamoDBOptions, Memory } from '@providers';
 import { testId } from '../../setup';
 
 type Data = { message: string; timestamp: number };
 
 describe('persist', () => {
-  let container: DynamoDBLocalContainer;
-
-  beforeAll(async () => {
-    container = new DynamoDBLocalContainer(console);
-    await container.start();
-  });
-
-  beforeEach(() => {});
-
-  afterEach(() => {});
-
-  afterAll(async () => {
-    if (container) {
-      await container.stop();
-    }
-  });
-
   describe('hot', () => {
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
@@ -99,12 +82,39 @@ describe('persist', () => {
       await replay(persistReplay(), { events: [] });
     });
 
-    test('memory', async () => {
-      const provider = Memory.from(testId());
-      const events = await run(persist(provider));
-      await replay(persistReplay(provider), events);
+    describe('memory', () => {
+      test('persist-replay', async () => {
+        const provider = Memory.from(testId());
+        const events = await run(persist(provider));
+        await replay(persistReplay(provider), events);
+      });
     });
 
-    test('dynamodb', async () => {});
+    describe('dynamodb', () => {
+      let container: DynamoDBLocalContainer;
+      let options: DynamoDBOptions = {};
+
+      beforeAll(async () => {
+        container = new DynamoDBLocalContainer(console);
+        await container.start();
+        options.client = container.getClient();
+      });
+
+      beforeEach(() => {});
+
+      afterEach(() => {});
+
+      afterAll(async () => {
+        if (container) {
+          await container.stop();
+        }
+      });
+
+      test('persist-replay', async () => {
+        const provider = DynamoDB.from(testId(), options);
+        const events = await run(persist(provider));
+        await replay(persistReplay(provider), events);
+      });
+    });
   });
 });

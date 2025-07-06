@@ -1,16 +1,16 @@
 import {
   delay,
   first,
+  map,
   MonoTypeOperatorFunction,
   Observable,
   of,
-  Subscription,
+  switchMap,
 } from 'rxjs';
 import { ICloudProvider } from '@providers';
 
 export const persist = <T>(
-  provider?: Observable<ICloudProvider<unknown, unknown>>,
-  onProvider?: (provider?: ICloudProvider<unknown, unknown>) => void
+  provider?: Observable<ICloudProvider<unknown, unknown>>
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
     return new Observable<T>((subscriber) => {
@@ -70,7 +70,6 @@ export const persist = <T>(
       ): void => {
         state.provider = provider;
         state.ready = true;
-        onProvider?.(provider);
         processBufferedValues();
       };
 
@@ -120,31 +119,25 @@ export const persistReplay = <T>(
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
     return new Observable<T>((subscriber) => {
-      let historicalSub: Subscription | undefined;
+      const persistSub = source.pipe(persist(provider)).subscribe(subscriber);
 
-      // Use persist with inline onProvider callback to handle both live data and historical replay
-      const persistSub = source
-        .pipe(
-          persist(provider, (p?: ICloudProvider<unknown, unknown>) => {
-            // Provider supports replay - emit historical data first
-            historicalSub = p?.all().subscribe({
-              next: (historicalEvent: unknown) => {
-                const unmarshalled = p.unmarshall<T>(historicalEvent);
+      const replaySub = provider
+        ?.pipe(
+          switchMap((p) =>
+            p.all().pipe(
+              map((event) => {
+                const unmarshalled = p.unmarshall<T>(event);
                 delete unmarshalled.__marker__;
-                subscriber.next(unmarshalled as T);
-              },
-              error: (error: unknown) => subscriber.error(error),
-              complete: () => {
-                // Historical data emission complete
-              },
-            });
-          })
+                return unmarshalled as T;
+              })
+            )
+          )
         )
         .subscribe(subscriber);
 
       return () => {
-        historicalSub?.unsubscribe();
         persistSub.unsubscribe();
+        replaySub?.unsubscribe();
       };
     });
   };

@@ -552,7 +552,7 @@ export class DynamoDB extends CloudProvider<
     return new Observable<Matcher<_Record>>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Storing item:`, item);
 
-      const timestamp = Date.now();
+      const timestamp = performance.now();
       const hashKeyValue = `item-${timestamp}`;
       const rangeKeyValue = `${timestamp}`;
 
