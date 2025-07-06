@@ -76,17 +76,54 @@ describe('persist', () => {
       expect(producedEvents[producedEvents.length - 1]).toEqual(data4);
     };
 
+    const observe = async (
+      operator: MonoTypeOperatorFunction<Data>,
+      expected: { events: Data[] }
+    ): Promise<void> => {
+      const producer = new Subject<Data>();
+      const observable = producer.pipe(operator);
+
+      let producedEventsP: Promise<Data[]>;
+      let producedEvents: Data[];
+
+      producedEventsP = firstValueFrom(
+        observable.pipe(take(expected.events.length), toArray())
+      );
+
+      producedEvents = await producedEventsP;
+      expect(producedEvents).toEqual(expected.events);
+    };
+
     test('baseline', async () => {
       await run(persist());
       // Providerless persistReplay has no historical data to replay
       await replay(persistReplay(), { events: [] });
+      await observe(persistReplay(), { events: [] });
     });
 
     describe('memory', () => {
+      test('persist', async () => {
+        const provider = Memory.from(testId());
+        await run(persist(provider));
+      });
+
       test('persist-replay', async () => {
         const provider = Memory.from(testId());
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
+      });
+
+      test('persist-observe', async () => {
+        const provider = Memory.from(testId());
+        const events = await run(persist(provider));
+        await observe(persistReplay(provider), events);
+      });
+
+      test('persist-replay-observe', async () => {
+        const provider = Memory.from(testId());
+        const events = await run(persist(provider));
+        await replay(persistReplay(provider), events);
+        await observe(persistReplay(provider), events);
       });
     });
 
@@ -110,10 +147,28 @@ describe('persist', () => {
         }
       });
 
+      test('persist', async () => {
+        const provider = DynamoDB.from(testId(), options);
+        await run(persist(provider));
+      });
+
       test('persist-replay', async () => {
         const provider = DynamoDB.from(testId(), options);
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
+      });
+
+      test('persist-observe', async () => {
+        const provider = DynamoDB.from(testId(), options);
+        const events = await run(persist(provider));
+        await observe(persistReplay(provider), events);
+      });
+
+      test('persist-replay-observe', async () => {
+        const provider = DynamoDB.from(testId(), options);
+        const events = await run(persist(provider));
+        await replay(persistReplay(provider), events);
+        await observe(persistReplay(provider), events);
       });
     });
   });

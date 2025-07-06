@@ -72,9 +72,6 @@ describe('aws-dynamodb', () => {
 
     expect(storedItems.length).toEqual(testItems.length);
 
-    console.log('!!! Test items:', testItems);
-    console.log('!!! Stored items:', storedItems);
-
     for (let i = 0; i < NUM_ITEMS; i++) {
       expect(storedItems[i]).toEqual(testItems[i]);
     }
