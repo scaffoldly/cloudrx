@@ -46,7 +46,11 @@ import {
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { PutCommand, TranslateConfig } from '@aws-sdk/lib-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  TranslateConfig,
+} from '@aws-sdk/lib-dynamodb';
 
 export type DynamoDBOptions = CloudOptions & {
   client?: DynamoDBClient;
@@ -96,7 +100,7 @@ export class DynamoDB extends CloudProvider<
     this._pollInterval = opts?.pollInterval || 5000;
   }
 
-  get client(): DynamoDBClient {
+  get client(): DynamoDBDocumentClient {
     return this._client;
   }
 
