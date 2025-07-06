@@ -14,22 +14,15 @@ type Data = { message: string; timestamp: number };
 
 describe('persist', () => {
   let container: DynamoDBLocalContainer;
-  let abort: AbortController;
 
   beforeAll(async () => {
     container = new DynamoDBLocalContainer(console);
     await container.start();
   });
 
-  beforeEach(() => {
-    abort = new AbortController();
-  });
+  beforeEach(() => {});
 
-  afterEach(() => {
-    if (!abort.signal.aborted) {
-      abort.abort();
-    }
-  });
+  afterEach(() => {});
 
   afterAll(async () => {
     if (container) {

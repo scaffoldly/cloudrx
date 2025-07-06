@@ -44,21 +44,24 @@ export class Abort extends AbortController {
   constructor(signal?: AbortSignal) {
     super();
     if (signal) {
-      signal.addEventListener('abort', () => this.abort());
+      signal.addEventListener('abort', () => this.abort(signal.reason));
     } else {
-      process.once('uncaughtException', (err) =>
-        process.nextTick(() => this.abort(err))
-      );
-      process.once('unhandledRejection', (reason) =>
-        process.nextTick(() => this.abort(reason))
-      );
-      process.once('SIGINT', () =>
-        process.nextTick(() => this.abort('SIGINT received'))
-      );
-      process.once('SIGTERM', () =>
-        process.nextTick(() => this.abort('SIGTERM received'))
-      );
+      process.on('uncaughtException', (error) => {
+        this.abort(error);
+      });
+      process.on('unhandledRejection', (reason) => {
+        this.abort(reason);
+      });
+      process.on('beforeExit', (code) => {
+        this.abort(new Error(`Process exiting with code: ${code}`));
+      });
     }
+  }
+
+  override abort(reason?: unknown): void {
+    // eslint-disable-next-line no-console
+    console.log('!!! got abort signal:', reason);
+    super.abort(reason);
   }
 }
 
@@ -207,8 +210,6 @@ export abstract class CloudProvider<TEvent, TMarker>
       let stream: Subscription | undefined;
       let match: Subscription | undefined;
 
-      const stream$ = this.stream();
-
       const matcher$ = this._store(item).pipe(
         observeOn(asyncScheduler),
         take(1),
@@ -218,7 +219,7 @@ export abstract class CloudProvider<TEvent, TMarker>
       this.logger.debug?.(`[${this.id}] Waiting for stream to start`);
       this._events.once('start', () => {
         this.logger.debug?.(`[${this.id}] Stream started, setting up matcher`);
-        match = combineLatest([stream$, matcher$])
+        match = combineLatest([this.stream(), matcher$])
           .pipe(
             takeUntil(fromEvent(this._events, 'stop')),
             filter(([event, matcher]) => matcher(event)),
@@ -239,7 +240,7 @@ export abstract class CloudProvider<TEvent, TMarker>
           });
       });
 
-      stream = stream$
+      stream = this.stream()
         .pipe(takeUntil(fromEvent(this._events, 'start')))
         .subscribe();
 
