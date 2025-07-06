@@ -84,6 +84,12 @@
       {
         "displayName": "unit",
         "preset": "ts-jest",
+        "moduleNameMapper": {
+          "^@operators$": "<rootDir>/src/operators/index.ts",
+          "^@subjects$": "<rootDir>/src/subjects/index.ts",
+          "^@providers$": "<rootDir>/src/providers/index.ts",
+          "^@util$": "<rootDir>/src/util/index.ts"
+        },
         "testEnvironment": "node",
         "roots": [
           "<rootDir>/tests"
@@ -97,13 +103,7 @@
           "src/**/*.ts",
           "!src/**/*.d.ts"
         ],
-        "coverageDirectory": "coverage",
-        "moduleNameMapper": {
-          "^@operators$": "<rootDir>/src/operators/index.ts",
-          "^@subjects$": "<rootDir>/src/subjects/index.ts",
-          "^@providers$": "<rootDir>/src/providers/index.ts",
-          "^@util$": "<rootDir>/src/util/index.ts"
-        }
+        "coverageDirectory": "coverage"
       }
     ]
   }
