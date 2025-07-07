@@ -94,7 +94,11 @@ export class DynamoDBImpl<
   private _streamArn?: string;
 
   public readonly translation: TranslateConfig = {
-    marshallOptions: {},
+    marshallOptions: {
+      removeUndefinedValues: true,
+      convertEmptyValues: false,
+      convertClassInstanceToMap: true,
+    },
     unmarshallOptions: {
       convertWithoutMapWrapper: true,
     },
