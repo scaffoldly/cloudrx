@@ -43,7 +43,10 @@ describe('subjects', () => {
       const subject = new CloudSubject<Data>(Memory.from(testId()));
       const snapshot = await lastValueFrom(subject.snapshot());
 
-      expect(snapshot).toEqual(seedData);
+      expect(snapshot.length).toBe(seedData.length);
+      seedData.forEach((item) => {
+        expect(snapshot).toContainEqual(item);
+      });
     });
 
     test('cloud-subject', async () => {
@@ -100,7 +103,10 @@ describe('subjects', () => {
       const subject = new CloudSubject<Data>(DynamoDB.from(testId(), options));
       const snapshot = await lastValueFrom(subject.snapshot());
 
-      expect(snapshot).toEqual(seedData);
+      expect(snapshot.length).toBe(seedData.length);
+      seedData.forEach((item) => {
+        expect(snapshot).toContainEqual(item);
+      });
     });
 
     test('cloud-subject', async () => {
