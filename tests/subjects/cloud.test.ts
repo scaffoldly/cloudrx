@@ -1,11 +1,6 @@
 import { firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import {
-  DynamoDB,
-  DynamoDBOptions,
-  ICloudProvider,
-  Memory,
-} from 'cloudrx';
+import { DynamoDB, DynamoDBOptions, ICloudProvider, Memory } from 'cloudrx';
 import { testId } from '../setup';
 import { CloudSubject } from 'cloudrx';
 
