@@ -1,11 +1,13 @@
 import { persistReplay } from '@operators';
 import { ICloudProvider } from '@providers';
 import {
+  first,
   Observable,
   Observer,
   Subject,
   Subscription,
   SubscriptionLike,
+  switchMap,
 } from 'rxjs';
 
 export class CloudSubject<T> extends Observable<T> implements SubscriptionLike {
@@ -16,6 +18,13 @@ export class CloudSubject<T> extends Observable<T> implements SubscriptionLike {
   constructor(private provider: Observable<ICloudProvider<unknown, unknown>>) {
     super();
     this.persisted = this.inner.pipe(persistReplay(this.provider));
+  }
+
+  public snapshot(): Observable<T[]> {
+    return this.provider.pipe(
+      first(),
+      switchMap((provider) => provider.snapshot<T>())
+    );
   }
 
   protected _subscribe(subscriber: Observer<T>): Subscription {

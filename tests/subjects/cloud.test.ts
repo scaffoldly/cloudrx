@@ -1,4 +1,4 @@
-import { firstValueFrom, Observable } from 'rxjs';
+import { firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { DynamoDB, DynamoDBOptions, ICloudProvider, Memory } from '@providers';
 import { testId } from '../setup';
@@ -38,6 +38,13 @@ describe('subjects', () => {
     afterEach(() => {});
 
     afterAll(async () => {});
+
+    test('snapshot', async () => {
+      const subject = new CloudSubject<Data>(Memory.from(testId()));
+      const snapshot = await lastValueFrom(subject.snapshot());
+
+      expect(snapshot).toEqual(seedData);
+    });
 
     test('cloud-subject', async () => {
       const subject = new CloudSubject<Data>(Memory.from(testId()));
@@ -87,6 +94,13 @@ describe('subjects', () => {
       if (container) {
         await container.stop();
       }
+    });
+
+    test('snapshot', async () => {
+      const subject = new CloudSubject<Data>(DynamoDB.from(testId(), options));
+      const snapshot = await lastValueFrom(subject.snapshot());
+
+      expect(snapshot).toEqual(seedData);
     });
 
     test('cloud-subject', async () => {

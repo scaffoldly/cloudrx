@@ -124,7 +124,7 @@ export const persistReplay = <T>(
       const replaySub = provider
         ?.pipe(
           switchMap((p) =>
-            p.all().pipe(
+            p.stream(true).pipe(
               map((event) => {
                 const unmarshalled = p.unmarshall<T>(event);
                 delete unmarshalled.__marker__;

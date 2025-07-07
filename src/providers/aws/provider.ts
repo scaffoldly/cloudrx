@@ -21,6 +21,8 @@ import {
   combineLatest,
   concatMap,
   defer,
+  EMPTY,
+  expand,
   filter,
   forkJoin,
   from,
@@ -49,8 +51,10 @@ import { unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   DynamoDBDocument,
   PutCommand,
+  QueryCommand,
   TranslateConfig,
 } from '@aws-sdk/lib-dynamodb';
+import { random } from 'timeflake';
 
 export type DynamoDBOptions<
   THashKey extends string = 'hashKey',
@@ -68,7 +72,6 @@ export type DynamoDBStreamedData<T> = Streamed<T, string>;
 export type DynamoDBStoredData<T> = {
   [x: string]: string | number | T;
   data: T;
-  timestamp: number;
   expires?: number;
 };
 
@@ -93,7 +96,7 @@ export class DynamoDBImpl<
   public readonly translation: TranslateConfig = {
     marshallOptions: {},
     unmarshallOptions: {
-      convertWithoutMapWrapper: false,
+      convertWithoutMapWrapper: true,
     },
   };
 
@@ -558,19 +561,82 @@ export class DynamoDBImpl<
     });
   }
 
+  protected _snapshot<T>(): Observable<T[]> {
+    return new Observable<T[]>((subscriber) => {
+      this.logger.debug?.(`[${this.id}] Fetching snapshot from DynamoDB...`);
+
+      // TODO: Do a quck scan to figure out KeyConditionExpression values
+      let query = new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: `${this.hashKey} = :hashKey`,
+        ExpressionAttributeValues: {
+          ':hashKey': this.id,
+        },
+        ScanIndexForward: false,
+      });
+
+      const subscription = from(this.client.query(query.input))
+        // const subscription = from(this.client.query(query.input))
+        .pipe(
+          expand((response) => {
+            const lastEvaluatedKey = response.LastEvaluatedKey;
+            if (!lastEvaluatedKey) return EMPTY;
+
+            query.input.ExclusiveStartKey = lastEvaluatedKey;
+
+            return from(
+              this.client.query({
+                ...query.input,
+                ExclusiveStartKey: lastEvaluatedKey,
+              })
+            );
+          }),
+          map((response) => {
+            const items = (response.Items || []) as DynamoDBStoredData<T>[];
+            // Extract the 'data' field from each DynamoDB record
+            return items.map((item) => item.data);
+          })
+        )
+        .subscribe({
+          next: (items) => {
+            this.logger.debug?.(
+              `[${this.id}] Fetched ${items.length} items from snapshot`
+            );
+            subscriber.next(items);
+          },
+          error: (error) => {
+            this.logger.error?.(
+              `[${this.id}] Failed to fetch snapshot:`,
+              error
+            );
+            subscriber.error(
+              new FatalError(`Failed to fetch snapshot: ${error.message}`)
+            );
+          },
+          complete: () => {
+            this.logger.debug?.(`[${this.id}] Snapshot fetch completed`);
+            subscriber.complete();
+          },
+        });
+
+      return () => {
+        this.logger.debug?.(`[${this.id}] Cleaning up snapshot subscription`);
+        subscription.unsubscribe();
+      };
+    });
+  }
+
   protected _store<T>(item: T): Observable<Matcher<_Record>> {
     return new Observable<Matcher<_Record>>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Storing item:`, item);
 
-      const timestamp = performance.now();
-      const hashKeyValue = `item-${timestamp}`;
-      const rangeKeyValue = `${timestamp}`;
+      const hashKeyValue = this.id;
+      const rangeKeyValue = random().base62;
 
       const record: DynamoDBStoredData<T> = {
         [this.hashKey]: hashKeyValue,
         [this.rangeKey]: rangeKeyValue,
         data: item,
-        timestamp,
         // expires: Math.floor(Date.now() / 1000) + 3600, // Expire in 1 hour
       };
 
@@ -624,13 +690,9 @@ export class DynamoDBImpl<
         'Invalid DynamoDB record: missing NewImage or OldImage'
       );
     }
-    const storedData = unmarshall(
-      image,
-      this.translation.unmarshallOptions
-    ) as DynamoDBStoredData<T>;
-    const { data } = storedData;
+    const storedData = unmarshall(image) as DynamoDBStoredData<T>;
     return {
-      ...data,
+      ...storedData.data,
       __marker__: marker,
     };
   }

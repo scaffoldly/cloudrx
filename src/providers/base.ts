@@ -27,8 +27,8 @@ export interface ICloudProvider<TEvent, TMarker> {
   get logger(): Logger;
 
   init(): Observable<this>;
-  all(): Observable<TEvent>;
-  stream(): Observable<TEvent>;
+  snapshot<T>(): Observable<T[]>;
+  stream(all?: boolean): Observable<TEvent>;
   store<T>(item: T): Observable<T>;
   unmarshall<T>(event: TEvent): Streamed<T, TMarker>;
 }
@@ -143,6 +143,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   }
 
   protected abstract _init(): Observable<this>;
+  protected abstract _snapshot<T>(): Observable<T[]>;
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
   protected abstract _store<T>(item: T): Observable<Matcher<TEvent>>;
   protected abstract _unmarshall<T>(event: TEvent): Streamed<T, unknown>;
@@ -164,11 +165,9 @@ export abstract class CloudProvider<TEvent, TMarker>
     });
   }
 
-  public all(): Observable<TEvent> {
-    return new Observable<TEvent>((subscriber) => {
-      const subscription = this._stream(true)
-        .pipe(concatAll())
-        .subscribe(subscriber);
+  public snapshot<T>(): Observable<T[]> {
+    return new Observable<T[]>((subscriber) => {
+      const subscription = this._snapshot<T>().subscribe(subscriber);
 
       return () => {
         subscription.unsubscribe();
@@ -176,8 +175,19 @@ export abstract class CloudProvider<TEvent, TMarker>
     });
   }
 
-  public stream(): Observable<TEvent> {
+  public stream(all: boolean = false): Observable<TEvent> {
     return new Observable<TEvent>((subscriber) => {
+      if (all) {
+        // Don't use cached stream, always create a new one
+        const subscription = this._stream(true)
+          .pipe(concatAll())
+          .subscribe(subscriber);
+
+        return () => {
+          subscription.unsubscribe();
+        };
+      }
+
       if (!this._stream$) {
         this.logger.debug?.(`[${this.id}] Creating new 'latest' stream`);
         this._stream$ = this._stream(false).pipe(

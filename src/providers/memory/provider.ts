@@ -4,6 +4,7 @@ import {
   fromEvent,
   interval,
   map,
+  of,
   timer,
 } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
@@ -140,6 +141,21 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         subscription.unsubscribe();
       };
     });
+  }
+
+  protected _snapshot<T>(): Observable<T[]> {
+    // HACK: get _all._buffer directly
+    const all = this._all as unknown as { _buffer: Record[][] };
+
+    return of(
+      all._buffer.reverse().flatMap((records) =>
+        records.map((record) => {
+          const unmarshalled = this._unmarshall<T>(record);
+          delete unmarshalled.__marker__;
+          return unmarshalled as T;
+        })
+      )
+    );
   }
 
   protected _store<T>(item: T): Observable<(event: Record) => boolean> {
