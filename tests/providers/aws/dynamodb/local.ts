@@ -4,7 +4,7 @@ import {
   TestContainer,
 } from 'testcontainers';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { Logger } from '@util';
+import { Logger } from 'cloudrx';
 
 export class DynamoDBLocalContainer {
   private container: TestContainer;

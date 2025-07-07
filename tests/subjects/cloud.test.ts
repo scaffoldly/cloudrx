@@ -1,8 +1,13 @@
 import { firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import { DynamoDB, DynamoDBOptions, ICloudProvider, Memory } from '@providers';
+import {
+  DynamoDB,
+  DynamoDBOptions,
+  ICloudProvider,
+  Memory,
+} from 'cloudrx';
 import { testId } from '../setup';
-import { CloudSubject } from '@subjects';
+import { CloudSubject } from 'cloudrx';
 
 type Data = { message: string; timestamp: number };
 

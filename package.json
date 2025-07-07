@@ -87,11 +87,13 @@
       {
         "displayName": "unit",
         "preset": "ts-jest",
+        "transform": {
+          "^.+\\.tsx?$": ["ts-jest", {
+            "tsconfig": "tests/tsconfig.json"
+          }]
+        },
         "moduleNameMapper": {
-          "^@operators$": "<rootDir>/src/operators/index.ts",
-          "^@subjects$": "<rootDir>/src/subjects/index.ts",
-          "^@providers$": "<rootDir>/src/providers/index.ts",
-          "^@util$": "<rootDir>/src/util/index.ts"
+          "^cloudrx$": "<rootDir>/src/index.ts"
         },
         "testEnvironment": "node",
         "roots": [

@@ -6,8 +6,8 @@ import {
   MonoTypeOperatorFunction,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import { persist, persistReplay } from '@operators';
-import { DynamoDB, DynamoDBOptions, Memory } from '@providers';
+import { persist, persistReplay } from 'cloudrx';
+import { DynamoDB, DynamoDBOptions, Memory } from 'cloudrx';
 import { testId } from '../setup';
 
 type Data = { message: string; timestamp: number };

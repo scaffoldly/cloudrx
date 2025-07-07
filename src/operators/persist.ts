@@ -7,7 +7,7 @@ import {
   of,
   switchMap,
 } from 'rxjs';
-import { ICloudProvider } from '@providers';
+import { ICloudProvider } from '../providers';
 
 export const persist = <T>(
   provider?: Observable<ICloudProvider<unknown, unknown>>

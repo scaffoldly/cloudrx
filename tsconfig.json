@@ -19,13 +19,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "baseUrl": "./src",
-    "paths": {
-      "@operators": ["operators/index.ts"],
-      "@providers": ["providers/index.ts"],
-      "@subjects": ["subjects/index.ts"],
-      "@util": ["util/index.ts"]
-    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

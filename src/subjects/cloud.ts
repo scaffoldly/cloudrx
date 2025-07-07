@@ -1,5 +1,5 @@
-import { persistReplay } from '@operators';
-import { ICloudProvider } from '@providers';
+import { persistReplay } from '../operators';
+import { ICloudProvider } from '../providers';
 import {
   first,
   Observable,

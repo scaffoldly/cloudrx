@@ -14,7 +14,7 @@ import {
   takeUntil,
   tap,
 } from 'rxjs';
-import { Logger } from '@util';
+import { Logger } from '../util';
 import { EventEmitter } from 'stream';
 
 export type Streamed<T, TMarker> = T & {

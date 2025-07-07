@@ -2,7 +2,11 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": "../",
+    "paths": {
+      "cloudrx": ["src/index.ts"]
+    }
   },
   "include": ["**/*"],
   "exclude": []

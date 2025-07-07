@@ -1,4 +1,4 @@
-import { DynamoDB, DynamoDBOptions } from '@providers';
+import { DynamoDB, DynamoDBOptions } from 'cloudrx';
 import { DynamoDBLocalContainer } from './local';
 import { testId } from '../../../setup';
 import { firstValueFrom } from 'rxjs';

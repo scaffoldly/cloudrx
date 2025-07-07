@@ -1,6 +1,6 @@
 import { of, delay, throwError, Subject, EMPTY, Observable } from 'rxjs';
 import { TestScheduler } from 'rxjs/testing';
-import { semaphore } from '@operators';
+import { semaphore } from 'cloudrx';
 
 describe('semaphore operator', () => {
   let testScheduler: TestScheduler;
