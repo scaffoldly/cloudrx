@@ -14,7 +14,7 @@ import {
   takeUntil,
   tap,
 } from 'rxjs';
-import { Logger } from '../util';
+import { InfoLogger, Logger } from '../util';
 import { EventEmitter } from 'stream';
 
 export type Streamed<T, TMarker> = T & {
@@ -125,7 +125,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   ) {
     this._events.setMaxListeners(100);
 
-    this._logger = opts?.logger ?? console;
+    this._logger = opts?.logger ?? new InfoLogger();
     this._signal = opts?.signal ?? new Abort().signal;
 
     this._signal.addEventListener('abort', () => {
@@ -236,8 +236,8 @@ export abstract class CloudProvider<TEvent, TMarker>
     return new Observable<T>((subscriber) => {
       let stream: Subscription | undefined;
       let match: Subscription | undefined;
-      let store = asyncScheduler.schedule(() => {
-        const matcher$ = this._store(item).pipe(
+      const store = asyncScheduler.schedule(() => {
+        const match$ = this._store(item).pipe(
           observeOn(asyncScheduler),
           take(1),
           shareReplay(1)
@@ -250,10 +250,10 @@ export abstract class CloudProvider<TEvent, TMarker>
           this.logger.debug?.(
             `[${this.id}] Stream started, setting up matcher`
           );
-          match = combineLatest([stream$, matcher$])
+          match = combineLatest([stream$, match$])
             .pipe(
               takeUntil(fromEvent(this._events, 'stop')),
-              filter(([event, matcher]) => matcher(event)),
+              filter(([event, match]) => match(event)),
               map(([event]) => {
                 const streamed = this._unmarshall(event) as Streamed<
                   T,

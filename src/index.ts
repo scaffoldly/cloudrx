@@ -24,4 +24,4 @@ export {
 export { CloudSubject } from './subjects';
 
 // Utilities - Helper types and functions
-export { Logger } from './util';
+export { Logger, InfoLogger } from './util';
