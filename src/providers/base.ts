@@ -236,44 +236,51 @@ export abstract class CloudProvider<TEvent, TMarker>
     return new Observable<T>((subscriber) => {
       let stream: Subscription | undefined;
       let match: Subscription | undefined;
+      let store = asyncScheduler.schedule(() => {
+        const matcher$ = this._store(item).pipe(
+          observeOn(asyncScheduler),
+          take(1),
+          shareReplay(1)
+        );
 
-      const matcher$ = this._store(item).pipe(
-        observeOn(asyncScheduler),
-        take(1),
-        shareReplay(1)
-      );
+        const stream$ = this.stream();
 
-      const stream$ = this.stream();
+        this.logger.debug?.(`[${this.id}] Waiting for stream to start`);
+        this._events.once('start', () => {
+          this.logger.debug?.(
+            `[${this.id}] Stream started, setting up matcher`
+          );
+          match = combineLatest([stream$, matcher$])
+            .pipe(
+              takeUntil(fromEvent(this._events, 'stop')),
+              filter(([event, matcher]) => matcher(event)),
+              map(([event]) => {
+                const streamed = this._unmarshall(event) as Streamed<
+                  T,
+                  TMarker
+                >;
+                this.logger.debug?.(
+                  `[${this.id}] Matched event, returning item:`,
+                  streamed
+                );
+                delete streamed.__marker__;
+                return streamed as T;
+              })
+            )
+            .subscribe((item) => {
+              this.logger.debug?.(`[${this.id}] Store operation completed`);
+              subscriber.next(item);
+              subscriber.complete();
+            });
+        });
 
-      this.logger.debug?.(`[${this.id}] Waiting for stream to start`);
-      this._events.once('start', () => {
-        this.logger.debug?.(`[${this.id}] Stream started, setting up matcher`);
-        match = combineLatest([stream$, matcher$])
-          .pipe(
-            takeUntil(fromEvent(this._events, 'stop')),
-            filter(([event, matcher]) => matcher(event)),
-            map(([event]) => {
-              const streamed = this._unmarshall(event) as Streamed<T, TMarker>;
-              this.logger.debug?.(
-                `[${this.id}] Matched event, returning item:`,
-                streamed
-              );
-              delete streamed.__marker__;
-              return streamed as T;
-            })
-          )
-          .subscribe((item) => {
-            this.logger.debug?.(`[${this.id}] Store operation completed`);
-            subscriber.next(item);
-            subscriber.complete();
-          });
+        stream = stream$
+          .pipe(takeUntil(fromEvent(this._events, 'start')))
+          .subscribe();
       });
 
-      stream = stream$
-        .pipe(takeUntil(fromEvent(this._events, 'start')))
-        .subscribe();
-
       return () => {
+        store.unsubscribe();
         stream?.unsubscribe();
         match?.unsubscribe();
       };
