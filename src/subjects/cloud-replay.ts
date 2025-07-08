@@ -10,7 +10,7 @@ import {
   switchMap,
 } from 'rxjs';
 
-export class CloudSubject<T> extends ReplaySubject<T> {
+export class CloudReplaySubject<T> extends ReplaySubject<T> {
   private inner = new Subject<T>();
 
   private persist: Subscription;

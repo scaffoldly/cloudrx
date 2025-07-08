@@ -40,14 +40,14 @@ result$.subscribe(item => {
 });
 ```
 
-### CloudSubject for Reactive Persistence
+### CloudReplaySubject for Reactive Persistence
 
 ```typescript
-import { CloudSubject } from 'cloudrx';
+import { CloudReplaySubject } from 'cloudrx';
 import { DynamoDBProvider } from 'cloudrx/providers';
 
-// Create a cloud-backed subject
-const subject = new CloudSubject(
+// Create a cloud-backed replay subject
+const subject = new CloudReplaySubject(
   DynamoDBProvider.from('events-table', options)
 );
 
@@ -64,7 +64,7 @@ subject.next({ type: 'user-action', data: { userId: 123 } });
 
 - 🌩️ **DynamoDB Streams Integration** - Real-time streaming from DynamoDB with automatic persistence
 - 🔄 **RxJS Operators** - `persist` and `persistReplay` operators for seamless integration
-- 📡 **CloudSubject** - Cloud-backed Subject with automatic persistence and replay
+- 📡 **CloudReplaySubject** - Cloud-backed ReplaySubject with automatic persistence and replay
 - 🎯 **Event Replay** - Automatic replay of persisted events on subscription using DynamoDB Streams
 - 🚀 **Reactive Persistence** - Store and retrieve data reactively with Observable patterns
 - 📦 **TypeScript First** - Full type safety and IntelliSense support
@@ -86,7 +86,7 @@ subject.next({ type: 'user-action', data: { userId: 123 } });
 
 ### Subjects
 
-- **`CloudSubject`** - RxJS Subject that automatically persists emissions and replays persisted data
+- **`CloudReplaySubject`** - RxJS ReplaySubject that automatically persists emissions and replays persisted data
 
 ## Development
 

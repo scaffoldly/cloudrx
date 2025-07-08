@@ -2,11 +2,11 @@ import { firstValueFrom, lastValueFrom, Observable } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { DynamoDB, DynamoDBOptions, ICloudProvider, Memory } from 'cloudrx';
 import { testId } from '../setup';
-import { CloudSubject } from 'cloudrx';
+import { CloudReplaySubject } from 'cloudrx';
 
 type Data = { message: string; timestamp: number };
 
-describe('cloud-subject', () => {
+describe('cloud-replay', () => {
   const seed = async (
     provider$: Observable<ICloudProvider<unknown, unknown>>
   ): Promise<Data[]> => {
@@ -30,7 +30,7 @@ describe('cloud-subject', () => {
     provider: Observable<ICloudProvider<unknown, unknown>>
   ): Promise<void> => {
     const seedData = await seed(provider);
-    const subject = new CloudSubject<Data>(provider);
+    const subject = new CloudReplaySubject<Data>(provider);
     const snapshot = await lastValueFrom(subject.snapshot());
 
     expect(snapshot.length).toBe(seedData.length);
@@ -43,7 +43,7 @@ describe('cloud-subject', () => {
     provider: Observable<ICloudProvider<unknown, unknown>>
   ): Promise<void> => {
     const seedData = await seed(provider);
-    const subject = new CloudSubject<Data>(provider);
+    const subject = new CloudReplaySubject<Data>(provider);
 
     const data = await new Promise<Data[]>((resolve) => {
       const incoming: Data[] = [];

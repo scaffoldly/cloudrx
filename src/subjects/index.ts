@@ -1,1 +1,1 @@
-export { CloudSubject } from './cloud';
+export { CloudReplaySubject } from './cloud-replay';

@@ -6,11 +6,11 @@ CloudRx is a TypeScript library for streaming cloud provider events using RxJS. 
 
 ## Usage Examples
 
-### Basic DynamoDB Streaming with `persistTo`
+### Basic DynamoDB Streaming with `persist` Operator
 
 ```typescript
 import { of } from 'rxjs';
-import { DynamoDBProvider, persistTo } from 'cloudrx';
+import { DynamoDB, persist } from 'cloudrx';
 
 // Create provider configuration
 const options = {
@@ -21,7 +21,7 @@ const options = {
 };
 
 // Create provider observable
-const provider$ = DynamoDBProvider.from('my-table', options);
+const provider$ = DynamoDB.from('my-table', options);
 
 // Data to persist
 const data = [
@@ -31,7 +31,7 @@ const data = [
 
 // Persist data and get it back from the stream
 const result$ = of(...data).pipe(
-  persistTo(provider$)
+  persist(provider$)
 );
 
 // Subscribe to get confirmed stored items
@@ -40,14 +40,84 @@ result$.subscribe(item => {
 });
 ```
 
+### CloudReplaySubject for Reactive Persistence with Backfill
+
+```typescript
+import { CloudReplaySubject } from 'cloudrx';
+import { DynamoDB } from 'cloudrx';
+
+// Create a cloud-backed replay subject
+const subject = new CloudReplaySubject(
+  DynamoDB.from('events-table', options)
+);
+
+// Subscribe to persisted events (includes replay of historical data)
+subject.subscribe(event => {
+  console.log('Received event:', event);
+});
+
+// Emit values that are automatically persisted
+subject.next({ type: 'user-action', data: { userId: 123 } });
+```
+
 ## Key Architecture Components
 
-### CloudProvider Abstract Class (`src/providers/index.ts`)
+### CloudProvider Abstract Class (`src/providers/base.ts`)
 
 - **Generic Type**: Uses `StreamEvent` (not `Event` to avoid DOM conflicts)
 - **EventEmitter**: Uses Node.js 'events' module for type safety
-- **Stream Method**: Returns `StreamController` with cleanup capabilities
+- **Stream Method**: Returns Observable with `concatAll()` flattening for `all=true` mode
 - **Error Handling**: Distinguishes between `RetryError` and `FatalError`
+- **Singleton Pattern**: Uses `CloudProvider.from()` with instance caching by ID
+- **Backfill Support**: `stream(all=true)` calls `_stream(true).pipe(concatAll())` to flatten record arrays into individual records
+
+### CloudReplaySubject (`src/subjects/cloud-replay.ts`)
+
+The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persists emissions and replays historical data for late subscribers.
+
+**Core Architecture**:
+```typescript
+export class CloudReplaySubject<T> extends ReplaySubject<T> {
+  private inner = new Subject<T>();
+  private persist: Subscription;
+  private stream: Subscription;
+}
+```
+
+**Key Features**:
+- **Dual Subscription Model**: Separate subscriptions for persistence (via `persist` operator) and stream replay
+- **Automatic Backfill**: Late subscribers receive all previously persisted data via ReplaySubject behavior
+- **Provider Integration**: Works with any CloudProvider (DynamoDB, Memory, etc.)
+- **Stream Processing**: Uses `provider.stream(true)` to get full historical replay from provider
+
+**Persistence Flow**:
+1. **Inner Subject**: User emissions go to internal Subject
+2. **Persist Operator**: Internal Subject piped through `persist(provider)` for storage
+3. **Stream Subscription**: Provider's `stream(true)` provides backfill and live updates
+4. **ReplaySubject Emission**: All data (backfilled and live) emitted to ReplaySubject subscribers
+
+**Backfill Mechanism**:
+- Provider's `stream(true)` calls `_stream(true).pipe(concatAll())` 
+- ReplaySubject buffer from provider flattened into individual records
+- Records unmarshalled and `__marker__` removed before emission
+- Late subscribers get complete history due to ReplaySubject inheritance
+
+**Usage Patterns**:
+```typescript
+// Basic usage with automatic backfill
+const subject = new CloudReplaySubject(provider$);
+
+// Subscribe before or after seeding - both get full history
+subject.subscribe(item => console.log('Historical + Live:', item));
+
+// Emit new data that gets persisted and replayed
+subject.next({ message: 'new data' });
+```
+
+**Critical Timing Fix (2025-07-08)**:
+- **Issue**: Original CloudSubject extended regular Subject, causing late subscribers to miss backfilled data
+- **Solution**: Changed to extend ReplaySubject, enabling late subscribers to receive historical emissions
+- **Impact**: Backfill tests now pass, ensuring consistent behavior across all scenarios
 
 ### DynamoDB Provider (`src/providers/aws/dynamodb.ts`)
 
@@ -346,6 +416,24 @@ Memory.from('test-id', {
 - **Configurable Load**: Timing controls prevent overwhelming test systems
 - **Cleanup**: Proper resource management with abort signals
 
+**Backfill Architecture & DynamoDB Simulation**:
+- **Page-Based Emissions**: Emits `Record[]` arrays to simulate DynamoDB pagination, not individual records
+- **Empty Page Simulation**: Regular `[]` emissions simulate DynamoDB GetRecords at stream tail
+- **ReplaySubject Buffer**: `_all` stream maintains unlimited buffer of all page emissions for backfill
+- **Buffer Content**: Contains mix of empty pages `[]` and record pages `[{record}]` in chronological order
+- **Flattening Pipeline**: Base class `concatAll()` flattens page arrays into individual records for CloudReplaySubject
+
+**Backfill Flow Debugging (2025-07-08)**:
+1. **Seeding Phase**: Records stored individually, each emits single-record page `[{record}]` to ReplaySubject
+2. **Buffer State**: ReplaySubject accumulates `[[], [{record1}], [{record2}], [{record3}]]`
+3. **CloudReplaySubject Creation**: Subscribes to `provider.stream(true)` for backfill
+4. **ReplaySubject Replay**: Immediately replays all buffered pages to new subscriber
+5. **Base Class Processing**: `concatAll()` flattens pages into individual records
+6. **Record Processing**: Each record unmarshalled, `__marker__` removed, emitted to ReplaySubject
+7. **Late Subscriber Support**: ReplaySubject inheritance ensures late subscribers get full history
+
+**Key Discovery**: Memory provider's ReplaySubject simulation works correctly - the timing issue was in CloudSubject not extending ReplaySubject, causing late subscribers to miss the backfilled emissions.
+
 ## Known Issues & Considerations
 
 ### Memory Management
@@ -620,3 +708,97 @@ Memory.from('test-id', {
 - **Best Practice**: Capture implementation patterns that can be reused across different providers and operators
 - **Continuous Improvement**: Update documentation immediately after implementation while details are fresh in memory
 - **Architecture Evolution**: Track how design patterns evolve and mature through real-world usage and testing
+
+## Recent Session: CloudReplaySubject Backfill Investigation & Fix (2025-07-08)
+
+### Problem Discovery
+
+- **Issue**: Memory provider backfill test failing with 0 results despite data being seeded correctly
+- **Initial Hypothesis**: Memory provider ReplaySubject not working, base class stream processing broken
+- **Investigation Method**: Added comprehensive logging to trace data flow through entire pipeline
+
+### Debugging Journey & Insights
+
+#### Phase 1: Memory Provider Investigation
+- **Expectation**: ReplaySubject buffer not containing seeded records
+- **Reality**: Buffer contained correct data: `[[], [{record1}], [{record2}], [{record3}]]`
+- **Learning**: Memory provider correctly simulates DynamoDB page-based emissions
+
+#### Phase 2: Base Class Stream Processing
+- **Expectation**: `concatAll()` not flattening properly
+- **Reality**: Base class correctly flattened page arrays into individual records
+- **Logging Revealed**: 
+  ```
+  [cloud-subject-memory-backfill] _stream(true) emitted 1 events before concatAll
+  [cloud-subject-memory-backfill] After concatAll - individual event: { id: '...', data: {...} }
+  ```
+
+#### Phase 3: CloudReplaySubject Processing
+- **Expectation**: Records not being unmarshalled or emitted properly
+- **Reality**: CloudReplaySubject correctly processed all records and emitted them
+- **Logging Revealed**:
+  ```
+  [CloudSubject] Received event from stream: { id: '...', data: {...} }
+  [CloudSubject] Unmarshalled: { message: 'data-1', timestamp: ... }
+  [CloudSubject] Emitting to subscribers: { message: 'data-1', timestamp: ... }
+  ```
+
+#### Phase 4: Root Cause Discovery
+- **Final Insight**: CloudSubject extended regular Subject, not ReplaySubject
+- **Timing Issue**: Test subscribed AFTER CloudSubject had already processed and emitted all backfilled data
+- **Core Problem**: Regular Subject doesn't replay emissions to late subscribers
+
+### The Fix: CloudSubject → CloudReplaySubject
+
+```typescript
+// Before: Regular Subject (late subscribers miss emissions)
+export class CloudSubject<T> extends Subject<T>
+
+// After: ReplaySubject (late subscribers get full history)
+export class CloudReplaySubject<T> extends ReplaySubject<T>
+```
+
+### Comprehensive Rebranding
+
+1. **File Renaming**: `cloud.ts` → `cloud-replay.ts`
+2. **Class Renaming**: `CloudSubject` → `CloudReplaySubject`
+3. **Export Updates**: Updated all index files and main exports
+4. **Test Updates**: Updated all test references
+5. **Documentation**: Updated README.md with new naming and examples
+6. **Verification**: All tests pass, TypeScript compiles, linting passes
+
+### Architecture Insights Gained
+
+#### Memory Provider Deep Dive
+- **Purpose**: Accurately simulates DynamoDB Stream behavior for testing
+- **Page Simulation**: Emits arrays `Record[]` not individual records, matching DynamoDB pagination
+- **Empty Pages**: Regular `[]` emissions simulate polling empty stream tail
+- **Timing Control**: Configurable delays for initialization, emission intervals, and storage operations
+- **ReplaySubject Usage**: Unlimited buffer for `_all` stream enables proper backfill testing
+
+#### Base Class Stream Architecture
+- **Interface Consistency**: `stream(all=true)` returns `Observable<TEvent>` (individual records)
+- **Flattening Logic**: Uses `concatAll()` to flatten provider's `Observable<TEvent[]>` into individual events
+- **Type Safety**: Maintains consistent interfaces while handling provider-specific pagination
+
+#### CloudReplaySubject Design Pattern
+- **Dual Role**: Both accepts new emissions (Subject behavior) AND replays historical data (ReplaySubject behavior)
+- **Provider Integration**: Seamlessly integrates with any CloudProvider via standardized interfaces
+- **Backfill Guarantee**: Late subscribers guaranteed to receive complete historical data
+- **Performance**: ReplaySubject buffer managed by RxJS, efficient memory usage
+
+### Lessons Learned
+
+1. **Debugging Strategy**: Comprehensive logging at each pipeline stage reveals exactly where issues occur
+2. **Assumption Validation**: Initial assumptions about where problems lie are often wrong - systematic investigation essential
+3. **Architecture Understanding**: Deep understanding of how ReplaySubject vs Subject affects subscription timing
+4. **Testing Patterns**: Backfill scenarios require careful consideration of subscription timing relative to data emission
+5. **Naming Accuracy**: Class names should accurately reflect their inheritance and behavior (ReplaySubject vs Subject)
+
+### Best Practices Established
+
+1. **Logging for Debugging**: Add detailed pipeline logging when investigating complex data flow issues
+2. **Subscription Timing**: Always consider when subscribers join relative to when data is emitted
+3. **Subject Type Selection**: Choose Subject type (Subject, ReplaySubject, BehaviorSubject) based on replay requirements
+4. **Interface Consistency**: Maintain consistent interfaces across providers while accommodating provider-specific behaviors
+5. **Comprehensive Testing**: Test both immediate subscription and late subscription scenarios for backfill functionality

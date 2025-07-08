@@ -21,7 +21,7 @@ export {
 } from './providers';
 
 // Subjects - Observable-like classes
-export { CloudSubject } from './subjects';
+export { CloudReplaySubject } from './subjects';
 
 // Utilities - Helper types and functions
 export { Logger, InfoLogger } from './util';
