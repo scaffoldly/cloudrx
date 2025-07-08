@@ -74,8 +74,6 @@ export class Abort extends AbortController {
   }
 
   override abort(reason?: unknown): void {
-    // eslint-disable-next-line no-console
-    console.log('!!! got abort signal:', reason);
     super.abort(reason);
   }
 }
@@ -125,8 +123,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   ) {
     this._events.setMaxListeners(100);
 
-    this._logger = opts?.logger ?? console;
-    // this._logger = opts?.logger ?? new InfoLogger();
+    this._logger = opts?.logger ?? new InfoLogger();
     this._signal = opts?.signal ?? new Abort().signal;
 
     this._signal.addEventListener('abort', () => {

@@ -118,13 +118,12 @@ export class Memory extends CloudProvider<Record, Record['id']> {
 
       const streamType = all ? 'all' : 'latest';
       const stream = all ? this._all : this._latest;
+
       const subscription = stream.subscribe({
         next: (records) => {
-          if (records.length > 0) {
-            this.logger.debug?.(
-              `[${this.id}] ${streamType} stream emitted ${records.length} records`
-            );
-          }
+          this.logger.debug?.(
+            `[${this.id}] ${streamType} stream emitted ${records.length} records: ${records.map((r) => r.id).join(', ')}`
+          );
           subscriber.next(records);
         },
         error: (error) => {
@@ -184,8 +183,12 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         .pipe(
           takeUntil(fromEvent(this.signal, 'abort')),
           map(() => {
+            this.logger.debug?.(
+              `[${this.id}] Emitting record ${id} to ReplaySubjects`
+            );
             this._all.next([record]);
             this._latest.next([record]);
+
             const matcher = (event: Record): boolean => event.id === id;
             subscriber.next(matcher);
             subscriber.complete();

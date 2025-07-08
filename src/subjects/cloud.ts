@@ -1,8 +1,16 @@
 import { persist } from '../operators';
 import { ICloudProvider } from '../providers';
-import { first, map, Observable, Subject, Subscription, switchMap } from 'rxjs';
+import {
+  first,
+  map,
+  Observable,
+  ReplaySubject,
+  Subject,
+  Subscription,
+  switchMap,
+} from 'rxjs';
 
-export class CloudSubject<T> extends Subject<T> {
+export class CloudSubject<T> extends ReplaySubject<T> {
   private inner = new Subject<T>();
 
   private persist: Subscription;
