@@ -1,23 +1,40 @@
-import { persistReplay } from '../operators';
+import { persist } from '../operators';
 import { ICloudProvider } from '../providers';
-import {
-  first,
-  Observable,
-  Observer,
-  Subject,
-  Subscription,
-  SubscriptionLike,
-  switchMap,
-} from 'rxjs';
+import { first, map, Observable, Subject, Subscription, switchMap } from 'rxjs';
 
-export class CloudSubject<T> extends Observable<T> implements SubscriptionLike {
-  closed = false;
+export class CloudSubject<T> extends Subject<T> {
   private inner = new Subject<T>();
-  private persisted: Observable<T>;
+
+  private persist: Subscription;
+  private stream: Subscription;
 
   constructor(private provider: Observable<ICloudProvider<unknown, unknown>>) {
     super();
-    this.persisted = this.inner.pipe(persistReplay(this.provider));
+
+    this.persist = this.inner.pipe(persist(this.provider)).subscribe({
+      error: (err) => super.error(err),
+      complete: () => super.complete(),
+    });
+
+    this.stream = this.provider
+      .pipe(
+        first(),
+        switchMap((provider) =>
+          // TODO make 'all' configurable
+          provider.stream(true).pipe(
+            map((event) => {
+              const unmarshalled = provider.unmarshall<T>(event);
+              delete unmarshalled.__marker__;
+              return unmarshalled as T;
+            })
+          )
+        )
+      )
+      .subscribe({
+        next: (value) => super.next(value),
+        error: (err) => this.error(err),
+        complete: () => this.complete(),
+      });
   }
 
   public snapshot(): Observable<T[]> {
@@ -27,28 +44,22 @@ export class CloudSubject<T> extends Observable<T> implements SubscriptionLike {
     );
   }
 
-  protected _subscribe(subscriber: Observer<T>): Subscription {
-    return this.persisted.subscribe(subscriber);
-  }
-
-  unsubscribe(): void {
-    if (this.closed) {
-      return;
-    }
-    this.closed = true;
-    this.inner.unsubscribe();
-    this.complete();
-  }
-
-  next(value: T): void {
+  override next(value: T): void {
     this.inner.next(value);
   }
 
-  error(err: unknown): void {
+  override error(err: unknown): void {
     this.inner.error(err);
   }
 
-  complete(): void {
+  override complete(): void {
     this.inner.complete();
+  }
+
+  override unsubscribe(): void {
+    this.persist.unsubscribe();
+    this.stream.unsubscribe();
+    this.inner.unsubscribe();
+    super.unsubscribe();
   }
 }

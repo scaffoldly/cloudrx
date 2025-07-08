@@ -6,7 +6,7 @@ import { CloudSubject } from 'cloudrx';
 
 type Data = { message: string; timestamp: number };
 
-describe('subjects', () => {
+describe('cloud-subject', () => {
   const seed = async (
     provider$: Observable<ICloudProvider<unknown, unknown>>
   ): Promise<Data[]> => {
@@ -26,72 +26,64 @@ describe('subjects', () => {
     return items;
   };
 
+  const snapshot = async (
+    provider: Observable<ICloudProvider<unknown, unknown>>
+  ): Promise<void> => {
+    const seedData = await seed(provider);
+    const subject = new CloudSubject<Data>(provider);
+    const snapshot = await lastValueFrom(subject.snapshot());
+
+    expect(snapshot.length).toBe(seedData.length);
+    seedData.forEach((item) => {
+      expect(snapshot).toContainEqual(item);
+    });
+  };
+
+  const backfill = async (
+    provider: Observable<ICloudProvider<unknown, unknown>>
+  ): Promise<void> => {
+    const seedData = await seed(provider);
+    const subject = new CloudSubject<Data>(provider);
+
+    const data = await new Promise<Data[]>((resolve) => {
+      const incoming: Data[] = [];
+      subject.subscribe({
+        next: (data) => {
+          incoming.push(data);
+        },
+      });
+
+      setTimeout(() => {
+        resolve(incoming);
+      }, 5000);
+    });
+
+    // Verify that all seeded data was received
+    expect(data.length).toBe(seedData.length);
+    seedData.forEach((item) => {
+      expect(data).toContainEqual(item);
+    });
+  };
+
   describe('memory', () => {
-    let seedData: Data[];
-
-    beforeAll(async () => {});
-
-    beforeEach(async () => {
-      seedData = await seed(Memory.from(testId()));
-    });
-
-    afterEach(() => {});
-
-    afterAll(async () => {});
-
     test('snapshot', async () => {
-      const subject = new CloudSubject<Data>(Memory.from(testId()));
-      const snapshot = await lastValueFrom(subject.snapshot());
-
-      expect(snapshot.length).toBe(seedData.length);
-      seedData.forEach((item) => {
-        expect(snapshot).toContainEqual(item);
-      });
+      await snapshot(Memory.from(testId()));
     });
 
-    test('cloud-subject', async () => {
-      const subject = new CloudSubject<Data>(Memory.from(testId()));
-
-      const data = await new Promise<Data[]>((resolve) => {
-        const incoming: Data[] = [];
-        subject.subscribe({
-          next: (data) => {
-            console.log('Received data:', data);
-            incoming.push(data);
-            if (incoming.length === seedData.length) {
-              subject.complete();
-            }
-          },
-          complete: () => {
-            resolve(incoming);
-          },
-        });
-      });
-
-      // Verify that all seeded data was received
-      expect(data.length).toBe(seedData.length);
-      seedData.forEach((item) => {
-        expect(data).toContainEqual(item);
-      });
+    test('backfill', async () => {
+      await backfill(Memory.from(testId()));
     });
   });
 
   describe('dynamodb', () => {
     let container: DynamoDBLocalContainer;
     let options: DynamoDBOptions = {};
-    let seedData: Data[];
 
     beforeAll(async () => {
       container = new DynamoDBLocalContainer(console);
       await container.start();
       options.client = container.getClient();
     });
-
-    beforeEach(async () => {
-      seedData = await seed(DynamoDB.from(testId(), options));
-    });
-
-    afterEach(() => {});
 
     afterAll(async () => {
       if (container) {
@@ -100,39 +92,11 @@ describe('subjects', () => {
     });
 
     test('snapshot', async () => {
-      const subject = new CloudSubject<Data>(DynamoDB.from(testId(), options));
-      const snapshot = await lastValueFrom(subject.snapshot());
-
-      expect(snapshot.length).toBe(seedData.length);
-      seedData.forEach((item) => {
-        expect(snapshot).toContainEqual(item);
-      });
+      await snapshot(DynamoDB.from(testId(), options));
     });
 
-    test('cloud-subject', async () => {
-      const subject = new CloudSubject<Data>(DynamoDB.from(testId(), options));
-
-      const data = await new Promise<Data[]>((resolve) => {
-        const incoming: Data[] = [];
-        subject.subscribe({
-          next: (data) => {
-            console.log('Received data:', data);
-            incoming.push(data);
-            if (incoming.length === seedData.length) {
-              subject.complete();
-            }
-          },
-          complete: () => {
-            resolve(incoming);
-          },
-        });
-      });
-
-      // Verify that all seeded data was received
-      expect(data.length).toBe(seedData.length);
-      seedData.forEach((item) => {
-        expect(data).toContainEqual(item);
-      });
+    test('backfill', async () => {
+      await backfill(DynamoDB.from(testId(), options));
     });
   });
 });
