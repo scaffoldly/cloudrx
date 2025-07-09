@@ -4,6 +4,7 @@ export { persist, persistReplay, semaphore } from './operators';
 // Providers - Cloud provider implementations
 export {
   // Base classes and types
+  Abort,
   CloudProvider,
   ICloudProvider,
   CloudOptions,

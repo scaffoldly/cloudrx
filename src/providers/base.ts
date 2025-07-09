@@ -40,7 +40,7 @@ export type CloudOptions = {
 
 export type Matcher<TEvent> = (event: TEvent) => boolean;
 
-class Abort extends AbortController {
+export class Abort extends AbortController {
   constructor(signal?: AbortSignal) {
     super();
     if (signal) {
