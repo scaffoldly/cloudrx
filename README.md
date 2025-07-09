@@ -23,6 +23,9 @@ npm install cloudrx@beta
 
 ## Usage
 
+> [!NOTE]
+> **Coming Soon**: `CloudAsyncSubject` and `CloudBehaviorSubject` are planned for future releases to provide cloud-backed versions of all RxJS subject types.
+
 ### `CloudReplaySubject<T>` (`extends ReplaySubject<T>`)
 
 CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persists all emissions to a cloud provider and replays historical data to new subscribers. Multiple CloudReplaySubjects using the same provider automatically share all events, making it perfect for distributed event streaming and cross-instance communication.
