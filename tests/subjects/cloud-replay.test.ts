@@ -1,4 +1,4 @@
-import { firstValueFrom, lastValueFrom, Observable } from 'rxjs';
+import { firstValueFrom, lastValueFrom, Observable, ReplaySubject } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import { DynamoDB, DynamoDBOptions, ICloudProvider, Memory } from 'cloudrx';
 import { testId } from '../setup';
@@ -27,10 +27,10 @@ describe('cloud-replay', () => {
   };
 
   const snapshot = async (
-    provider: Observable<ICloudProvider<unknown, unknown>>
+    provider: Observable<ICloudProvider<unknown, unknown>>,
+    subject: CloudReplaySubject<Data>
   ): Promise<void> => {
     const seedData = await seed(provider);
-    const subject = new CloudReplaySubject<Data>(provider);
     const snapshot = await lastValueFrom(subject.snapshot());
 
     expect(snapshot.length).toBe(seedData.length);
@@ -40,10 +40,10 @@ describe('cloud-replay', () => {
   };
 
   const backfill = async (
-    provider: Observable<ICloudProvider<unknown, unknown>>
+    provider: Observable<ICloudProvider<unknown, unknown>>,
+    subject: ReplaySubject<Data>
   ): Promise<void> => {
     const seedData = await seed(provider);
-    const subject = new CloudReplaySubject<Data>(provider);
 
     const data = await new Promise<Data[]>((resolve) => {
       const incoming: Data[] = [];
@@ -65,13 +65,56 @@ describe('cloud-replay', () => {
     });
   };
 
+  const additive = async (
+    provider: Observable<ICloudProvider<unknown, unknown>>,
+    subject: ReplaySubject<Data>
+  ): Promise<void> => {
+    const seedData = await seed(provider);
+
+    const moreData: Data[] = [
+      { message: 'data-4', timestamp: performance.now() },
+      { message: 'data-5', timestamp: performance.now() },
+    ];
+
+    const data = await new Promise<Data[]>((resolve) => {
+      const incoming: Data[] = [];
+      subject.subscribe({
+        next: (data) => {
+          incoming.push(data);
+        },
+      });
+
+      moreData.forEach((d) => subject.next(d));
+
+      setTimeout(() => {
+        resolve(incoming);
+      }, 5000);
+    });
+
+    // Verify that all seeded data was received
+    expect(data.length).toBe(seedData.length + moreData.length);
+    [...seedData, ...moreData].forEach((item) => {
+      expect(data).toContainEqual(item);
+    });
+  };
+
   describe('memory', () => {
     test('snapshot', async () => {
-      await snapshot(Memory.from(testId()));
+      const provider = Memory.from(testId());
+      const subject = new CloudReplaySubject<Data>(provider);
+      await snapshot(provider, subject);
     });
 
     test('backfill', async () => {
-      await backfill(Memory.from(testId()));
+      const provider = Memory.from(testId());
+      const subject = new CloudReplaySubject<Data>(provider);
+      await backfill(provider, subject);
+    });
+
+    test('additive', async () => {
+      const provider = Memory.from(testId());
+      const subject = new CloudReplaySubject<Data>(provider);
+      await additive(provider, subject);
     });
   });
 
@@ -92,11 +135,21 @@ describe('cloud-replay', () => {
     });
 
     test('snapshot', async () => {
-      await snapshot(DynamoDB.from(testId(), options));
+      const provider = DynamoDB.from(testId(), options);
+      const subject = new CloudReplaySubject<Data>(provider);
+      await snapshot(provider, subject);
     });
 
     test('backfill', async () => {
-      await backfill(DynamoDB.from(testId(), options));
+      const provider = DynamoDB.from(testId(), options);
+      const subject = new CloudReplaySubject<Data>(provider);
+      await backfill(provider, subject);
+    });
+
+    test('additive', async () => {
+      const provider = DynamoDB.from(testId(), options);
+      const subject = new CloudReplaySubject<Data>(provider);
+      await additive(provider, subject);
     });
   });
 });
