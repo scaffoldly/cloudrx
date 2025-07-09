@@ -2,43 +2,26 @@
 
 TypeScript library for streaming cloud provider events using RxJS. It provides reactive interfaces for cloud services like DynamoDB Streams with automatic persistence and replay capabilities.
 
+## Prerequisites
+
+CloudRx extends RxJS to provide cloud-backed reactive streams. It requires:
+
+- [`rxjs`](https://www.npmjs.com/package/rxjs): `v7` or higher
+- Node.js: `v20` or higher
+
 ## Installation
 
+CloudRx is built on top of RxJS 7+ and provides cloud-backed extensions to standard RxJS operators and subjects.
+
 ```bash
-npm install cloudrx
+# Install RxJS if not already installed
+npm install rxjs
+
+# Install CloudRx
+npm install cloudrx@beta
 ```
 
 ## Quick Start
-
-### Basic DynamoDB Streaming with `persist` Operator
-
-```typescript
-import { of } from 'rxjs';
-import { DynamoDBProvider, persist } from 'cloudrx';
-
-// Create DynamoDB provider
-const provider$ = DynamoDBProvider.from('my-table', {
-  client: dynamoDbClient,
-  hashKey: 'id',
-  rangeKey: 'timestamp'
-});
-
-// Data to persist
-const data = [
-  { message: 'hello', timestamp: Date.now() },
-  { message: 'world', timestamp: Date.now() + 1 }
-];
-
-// Persist data and get it back from the stream
-const result$ = of(...data).pipe(
-  persist(provider$)
-);
-
-// Subscribe to get confirmed stored items
-result$.subscribe(item => {
-  console.log('Item stored and confirmed:', item);
-});
-```
 
 ### CloudReplaySubject for Reactive Persistence
 
@@ -52,7 +35,7 @@ const subject = new CloudReplaySubject(
 );
 
 // Subscribe to persisted events (includes replay)
-subject.subscribe(event => {
+subject.subscribe((event) => {
   console.log('Received event:', event);
 });
 
@@ -84,9 +67,36 @@ subject.next({ type: 'user-action', data: { userId: 123 } });
   - Shard-based streaming with automatic discovery
   - Error handling with retry/fatal error distinction
 
-### Subjects
+## Subjects
 
-- **`CloudReplaySubject`** - RxJS ReplaySubject that automatically persists emissions and replays persisted data
+### CloudReplaySubject
+
+The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persists emissions and replays historical data for late subscribers.
+
+**Key Features:**
+
+- **Automatic Persistence** - All emitted values are automatically stored to the cloud provider
+- **Historical Replay** - Late subscribers receive all previously persisted data
+- **Provider Integration** - Works with any CloudProvider (DynamoDB, Memory, etc.)
+- **ReplaySubject Behavior** - Maintains standard RxJS ReplaySubject semantics
+
+**Usage:**
+
+```typescript
+import { CloudReplaySubject } from 'cloudrx';
+import { DynamoDBProvider } from 'cloudrx/providers';
+
+// Create with DynamoDB provider
+const subject = new CloudReplaySubject(
+  DynamoDBProvider.from('events-table', options)
+);
+
+// Subscribe before or after seeding - both get full history
+subject.subscribe((item) => console.log('Historical + Live:', item));
+
+// Emit new data that gets persisted and replayed
+subject.next({ message: 'new data' });
+```
 
 ## Development
 
@@ -116,7 +126,7 @@ npm test
 
 - `npm run build` - Compile TypeScript
 - `npm test` - Run unit tests (info level logs)
-- `npm test -- --verbose` - Run with debug level logs  
+- `npm test -- --verbose` - Run with debug level logs
 - `npm test -- --silent` - Run with no logs
 - `npm run test:watch` - Watch mode for development
 - `npm run test:integration` - Run integration tests with DynamoDB Local
