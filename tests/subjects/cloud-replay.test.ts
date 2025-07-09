@@ -45,7 +45,6 @@ describe('cloud-replay', () => {
 
   const snapshot = async (
     seedData: Data[],
-    provider: Observable<ICloudProvider<unknown, unknown>>,
     subject: CloudReplaySubject<Data>
   ): Promise<void> => {
     const snapshot = await lastValueFrom(subject.snapshot());
@@ -58,7 +57,6 @@ describe('cloud-replay', () => {
 
   const backfill = async (
     seedData: Data[],
-    provider: Observable<ICloudProvider<unknown, unknown>>,
     subject: ReplaySubject<Data>
   ): Promise<void> => {
     const data = await new Promise<Data[]>((resolve) => {
@@ -83,7 +81,6 @@ describe('cloud-replay', () => {
 
   const additive = async (
     seedData: Data[],
-    provider: Observable<ICloudProvider<unknown, unknown>>,
     subject: ReplaySubject<Data>
   ): Promise<Data[]> => {
     const moreData: Data[] = [
@@ -117,14 +114,13 @@ describe('cloud-replay', () => {
 
   const shadowed = async (
     seedData: Data[],
-    provider: Observable<ICloudProvider<unknown, unknown>>,
     subjects: CloudReplaySubject<Data>[]
   ): Promise<void> => {
     const primary = subjects[0];
 
-    const allData = await additive(seedData, provider, primary!);
+    const allData = await additive(seedData, primary!);
     await Promise.all(
-      subjects.slice(1).map((subject) => snapshot(allData, provider, subject))
+      subjects.slice(1).map((subject) => snapshot(allData, subject))
     );
   };
 
@@ -133,21 +129,21 @@ describe('cloud-replay', () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await snapshot(seedData, provider, subject);
+      await snapshot(seedData, subject);
     });
 
     test('backfill', async () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await backfill(seedData, provider, subject);
+      await backfill(seedData, subject);
     });
 
     test('additive', async () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await additive(seedData, provider, subject);
+      await additive(seedData, subject);
     });
 
     test('shadowed', async () => {
@@ -158,7 +154,7 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
         new CloudReplaySubject<Data>(provider),
       ];
-      await shadowed(seedData, provider, subjects);
+      await shadowed(seedData, subjects);
     });
   });
 
@@ -180,21 +176,21 @@ describe('cloud-replay', () => {
       const provider = DynamoDB.from(testId(), options);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await snapshot(seedData, provider, subject);
+      await snapshot(seedData, subject);
     });
 
     test('backfill', async () => {
       const provider = DynamoDB.from(testId(), options);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await backfill(seedData, provider, subject);
+      await backfill(seedData, subject);
     });
 
     test('additive', async () => {
       const provider = DynamoDB.from(testId(), options);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
-      await additive(seedData, provider, subject);
+      await additive(seedData, subject);
     });
 
     test('shadowed', async () => {
@@ -205,7 +201,7 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
         new CloudReplaySubject<Data>(provider),
       ];
-      await shadowed(seedData, provider, subjects);
+      await shadowed(seedData, subjects);
     });
   });
 });
