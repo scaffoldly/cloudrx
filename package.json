@@ -19,14 +19,12 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "jest": "NODE_OPTIONS='--experimental-vm-modules --trace-warnings' jest",
-    "test": "npm run jest -- --testTimeout=30000",
-    "test:watch": "npm run jest -- --watch"
+    "test": "npm run jest -- --testTimeout=30000"
   },
   "keywords": [
     "rxjs",

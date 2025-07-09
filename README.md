@@ -184,13 +184,10 @@ npm test
 ### Available Scripts
 
 - `npm run build` - Compile TypeScript
-- `npm test` - Run unit tests (info level logs)
-- `npm test -- --verbose` - Run with debug level logs
-- `npm test -- --silent` - Run with no logs
-- `npm run test:watch` - Watch mode for development
-- `npm run test:integration` - Run integration tests with DynamoDB Local
+- `npm run clean` - Remove dist directory
+- `npm test` - Run unit tests with 30s timeout
 - `npm run lint` - Run ESLint
-- `npm run lint:fix` - Fix ESLint issues
+- `npm run lint:fix` - Fix ESLint issues automatically
 - `npx tsc --noEmit` - TypeScript compilation check
 
 ## Contributing
