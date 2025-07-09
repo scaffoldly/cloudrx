@@ -124,6 +124,71 @@ describe('cloud-replay', () => {
     );
   };
 
+  const readmeUsage = async (
+    provider: Observable<ICloudProvider<unknown, unknown>>
+  ): Promise<void> => {
+    // Create cloud-backed replay subjects using the same provider
+    const subject0 = new CloudReplaySubject(provider);
+    const subject1 = new CloudReplaySubject(provider);
+    const subject2 = new CloudReplaySubject(provider);
+
+    // Emit a 'login' event to subject0
+    subject0.next({
+      type: 'user-action',
+      data: { userId: 123, action: 'login' },
+    });
+
+    // Emit a 'purchase' event to subject1
+    subject1.next({
+      type: 'user-action',
+      data: { userId: 123, action: 'purchase' },
+    });
+
+    // Emit a 'processing' event to subject2
+    subject2.next({
+      type: 'user-action',
+      data: { userId: 123, action: 'processing' },
+    });
+
+    // Both subjects automatically receive all events
+    const events1 = await new Promise<unknown[]>((resolve) => {
+      const received: unknown[] = [];
+      subject1.subscribe((event) => {
+        received.push(event);
+      });
+
+      setTimeout(() => {
+        resolve(received);
+      }, 5000);
+    });
+
+    const events2 = await new Promise<unknown[]>((resolve) => {
+      const received: unknown[] = [];
+      subject2.subscribe((event) => {
+        received.push(event);
+      });
+
+      setTimeout(() => {
+        resolve(received);
+      }, 5000);
+    });
+
+    // Verify both subjects received all events
+    expect(events1).toHaveLength(3);
+    expect(events2).toHaveLength(3);
+
+    const expectedEvents = [
+      { type: 'user-action', data: { userId: 123, action: 'login' } },
+      { type: 'user-action', data: { userId: 123, action: 'purchase' } },
+      { type: 'user-action', data: { userId: 123, action: 'processing' } },
+    ];
+
+    expectedEvents.forEach((event) => {
+      expect(events1).toContainEqual(event);
+      expect(events2).toContainEqual(event);
+    });
+  };
+
   describe('memory', () => {
     test('snapshot', async () => {
       const provider = Memory.from(testId());
@@ -155,6 +220,10 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
       ];
       await shadowed(seedData, subjects);
+    });
+
+    test('readme-usage', async () => {
+      await readmeUsage(Memory.from(testId()));
     });
   });
 
@@ -202,6 +271,10 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
       ];
       await shadowed(seedData, subjects);
+    });
+
+    test('readme-usage', async () => {
+      await readmeUsage(DynamoDB.from(testId(), options));
     });
   });
 });

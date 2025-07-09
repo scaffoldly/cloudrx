@@ -21,23 +21,54 @@ npm install rxjs
 npm install cloudrx@beta
 ```
 
-## Quick Start
+## Usage
 
-### CloudReplaySubject for DynamoDB Persistence
+### CloudReplaySubject using DynamoDB
 
 ```typescript
 import { CloudReplaySubject, DynamoDB } from 'cloudrx';
 
-// Create a cloud-backed replay subject
-const subject = new CloudReplaySubject(DynamoDB.from('events-table', options));
+// Create cloud-backed replay subjects using the same DynamoDB table
+const subject0 = new CloudReplaySubject(DynamoDB.from('events'));
+const subject1 = new CloudReplaySubject(DynamoDB.from('events'));
+const subject2 = new CloudReplaySubject(DynamoDB.from('events'));
 
-// Subscribe to persisted events (includes replay)
-subject.subscribe((event) => {
-  console.log('Received event:', event);
+// Emit a 'login' event to subject0
+subject0.next({
+  type: 'user-action',
+  data: { userId: 123, action: 'login' },
 });
 
-// Emit values that are automatically persisted
-subject.next({ type: 'user-action', data: { userId: 123 } });
+// Emit a 'purchase' event to subject1
+subject1.next({
+  type: 'user-action',
+  data: { userId: 123, action: 'purchase' },
+});
+
+// Emit a 'purchase' event to subject1
+subject2.next({
+  type: 'user-action',
+  data: { userId: 123, action: 'processing' },
+});
+
+// Both subjects automatically recieve both events
+subject1.subscribe((event) => {
+  console.log('Subject1 received:', event);
+});
+
+subject2.subscribe((event) => {
+  console.log('Subject2 received:', event);
+});
+
+// Output for subject1:
+// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'login' } }
+// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'purchase' } }
+// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
+
+// Output for subject2:
+// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'login' } }
+// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'purchase' } }
+// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
 ```
 
 ## Features
@@ -74,23 +105,9 @@ The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically p
 
 - **Automatic Persistence** - All emitted values are automatically stored to the cloud provider
 - **Historical Replay** - Late subscribers receive all previously persisted data
+- **Cross-Instance Sharing** - Multiple CloudReplaySubjects using the same provider (e.g., `DynamoDB.from('events')`) automatically share all historical events
 - **Provider Integration** - Works with any CloudProvider (DynamoDB, Memory, etc.)
 - **ReplaySubject Behavior** - Maintains standard RxJS ReplaySubject semantics
-
-**Usage:**
-
-```typescript
-import { CloudReplaySubject, DynamoDB } from 'cloudrx';
-
-// Create with DynamoDB provider
-const subject = new CloudReplaySubject(DynamoDB.from('events-table', options));
-
-// Subscribe before or after seeding - both get full history
-subject.subscribe((item) => console.log('Historical + Live:', item));
-
-// Emit new data that gets persisted and replayed
-subject.next({ message: 'new data' });
-```
 
 ## Development
 
