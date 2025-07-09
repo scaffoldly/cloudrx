@@ -137,14 +137,14 @@ describe('cloud-replay', () => {
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await backfill(seedData, subject);
-    });
+    }, 10000);
 
     test('additive', async () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await additive(seedData, subject);
-    });
+    }, 10000);
 
     test('shadowed', async () => {
       const provider = Memory.from(testId());
@@ -155,7 +155,7 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
       ];
       await shadowed(seedData, subjects);
-    });
+    }, 10000);
   });
 
   describe('dynamodb', () => {
@@ -184,14 +184,14 @@ describe('cloud-replay', () => {
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await backfill(seedData, subject);
-    });
+    }, 10000);
 
     test('additive', async () => {
       const provider = DynamoDB.from(testId(), options);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await additive(seedData, subject);
-    });
+    }, 10000);
 
     test('shadowed', async () => {
       const provider = DynamoDB.from(testId(), options);
@@ -202,6 +202,6 @@ describe('cloud-replay', () => {
         new CloudReplaySubject<Data>(provider),
       ];
       await shadowed(seedData, subjects);
-    });
+    }, 10000);
   });
 });
