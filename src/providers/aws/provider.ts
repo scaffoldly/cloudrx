@@ -718,6 +718,30 @@ type DynamoDBConstructor = {
     id: string,
     opts?: DynamoDBOptions<THashKey, TRangeKey>
   ): Observable<DynamoDBImpl<THashKey, TRangeKey>>;
+  
+  /**
+   * Create a new DynamoDB provider builder
+   * 
+   * @param id The provider ID
+   */
+  from(id: string): import('./builder').DynamoDBBuilder;
+};
+
+// Import the builder
+import { DynamoDBBuilder } from './builder';
+
+// Original from method implementation
+const originalFrom = DynamoDBImpl.from;
+
+// Enhanced DynamoDBImpl with builder support
+DynamoDBImpl.from = function<THashKey extends string = 'hashKey', TRangeKey extends string = 'rangeKey'>(
+  id: string,
+  opts?: DynamoDBOptions<THashKey, TRangeKey>
+): Observable<DynamoDBImpl<THashKey, TRangeKey>> {
+  if (opts === undefined) {
+    return new DynamoDBBuilder<THashKey, TRangeKey>(id);
+  }
+  return originalFrom.call(this, id, opts);
 };
 
 // Export DynamoDB with enhanced typing

@@ -242,28 +242,32 @@ describe('cloud-replay', () => {
     });
 
     test('snapshot', async () => {
-      const provider = DynamoDB.from(testId(), options);
+      const provider = DynamoDB.from(testId())
+        .withClient(options.client!);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await snapshot(seedData, subject);
     });
 
     test('backfill', async () => {
-      const provider = DynamoDB.from(testId(), options);
+      const provider = DynamoDB.from(testId())
+        .withClient(options.client!);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await backfill(seedData, subject);
     });
 
     test('additive', async () => {
-      const provider = DynamoDB.from(testId(), options);
+      const provider = DynamoDB.from(testId())
+        .withClient(options.client!);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await additive(seedData, subject);
     });
 
     test('shadowed', async () => {
-      const provider = DynamoDB.from(testId(), options);
+      const provider = DynamoDB.from(testId())
+        .withClient(options.client!);
       const seedData = await seed(provider);
       const subjects: CloudReplaySubject<Data>[] = [
         new CloudReplaySubject<Data>(provider),

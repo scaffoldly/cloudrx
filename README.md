@@ -34,11 +34,15 @@ CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persi
 
 ```typescript
 import { CloudReplaySubject, DynamoDB } from 'cloudrx';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 
 // Create cloud-backed replay subjects using the same DynamoDB table
-const subject0 = new CloudReplaySubject(DynamoDB.from('events'));
-const subject1 = new CloudReplaySubject(DynamoDB.from('events'));
-const subject2 = new CloudReplaySubject(DynamoDB.from('events'));
+const provider = DynamoDB.from('events')
+  .withClient(new DynamoDBClient({ region: 'us-east-1' }));
+
+const subject0 = new CloudReplaySubject(provider);
+const subject1 = new CloudReplaySubject(provider);
+const subject2 = new CloudReplaySubject(provider);
 
 // Emit a 'login' event to subject0
 subject0.next({
@@ -78,35 +82,36 @@ subject2.subscribe((event) => {
 // Subject2 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
 ```
 
-##### DynamoDBOptions
+##### DynamoDB Builder
 
-The `DynamoDB.from()` method accepts an optional `DynamoDBOptions` object to configure the DynamoDB provider:
-
-| Option         | Type             | Default                | Description                                             |
-| -------------- | ---------------- | ---------------------- | ------------------------------------------------------- |
-| `client`       | `DynamoDBClient` | `new DynamoDBClient()` | Pre-configured DynamoDBClient instance                  |
-| `hashKey`      | `string`         | `'hashKey'`            | Name of the hash key attribute in the DynamoDB table    |
-| `rangeKey`     | `string`         | `'rangeKey'`           | Name of the range key attribute in the DynamoDB table   |
-| `ttlAttribute` | `string`         | `'expires'`            | Name of the TTL attribute for automatic record cleanup  |
-| `pollInterval` | `number`         | `5000`                 | Stream polling interval in milliseconds                 |
-| `logger`       | `Logger`         | `undefined`            | Optional logger instance (console-compatible interface) |
-| `signal`       | `AbortSignal`    | `undefined`            | Optional AbortSignal for graceful cleanup               |
+The `DynamoDB.from()` method returns a builder that allows for fluent configuration of the DynamoDB provider:
 
 ```typescript
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { CloudReplaySubject, DynamoDB } from 'cloudrx';
 
-const options = {
-  client: new DynamoDBClient({ region: 'us-east-1' }),
-  hashKey: 'userId',
-  rangeKey: 'timestamp',
-  ttlAttribute: 'expiresAt',
-  pollInterval: 3000,
-  logger: console,
-};
-
-const subject = new CloudReplaySubject(DynamoDB.from('user-events', options));
+const subject = new CloudReplaySubject(
+  DynamoDB.from('user-events')
+    .withClient(new DynamoDBClient({ region: 'us-east-1' }))
+    .withHashKey('userId')
+    .withRangeKey('timestamp')
+    .withTtlAttribute('expiresAt')
+    .withPollInterval(3000)
+    .withLogger(console)
+);
 ```
+
+**Available Builder Methods**:
+
+| Method                    | Parameter Type     | Default                | Description                                             |
+| ------------------------- | ------------------ | ---------------------- | ------------------------------------------------------- |
+| `withClient()`            | `DynamoDBClient`   | `new DynamoDBClient()` | Set the DynamoDB client                                 |
+| `withHashKey()`           | `string`           | `'hashKey'`            | Set the hash key attribute name                          |
+| `withRangeKey()`          | `string`           | `'rangeKey'`           | Set the range key attribute name                         |
+| `withTtlAttribute()`      | `string`           | `'expires'`            | Set the TTL attribute name                               |
+| `withPollInterval()`      | `number`           | `5000`                 | Set the poll interval in milliseconds                   |
+| `withLogger()`            | `Logger`           | `undefined`            | Set the logger (console-compatible interface)           |
+| `withSignal()`            | `AbortSignal`      | `undefined`            | Set the abort signal for graceful cleanup               |
 
 **Table Management:**
 
@@ -142,9 +147,13 @@ Tables are automatically named with the pattern `cloudrx-{id}` where `{id}` is t
 ### Providers
 
 - **`DynamoDB`** - AWS DynamoDB with DynamoDB Streams for real-time event streaming
+  - Builder pattern for fluent configuration
   - Configurable TTL for automatic cleanup
   - Shard-based streaming with automatic discovery
   - Error handling with retry/fatal error distinction
+- **`Memory`** - In-memory provider for testing
+  - Builder pattern for fluent configuration
+  - Configurable delays for initialization, emission, and storage
 
 ## Subjects
 

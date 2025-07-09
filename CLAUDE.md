@@ -12,16 +12,12 @@ CloudRx is a sophisticated TypeScript library that extends RxJS to provide cloud
 import { of } from 'rxjs';
 import { DynamoDB, persist } from 'cloudrx';
 
-// Create provider configuration
-const options = {
-  client: dynamoDbClient,
-  hashKey: 'id',
-  rangeKey: 'timestamp',
-  signal: abortController.signal,
-};
-
-// Create provider observable
-const provider$ = DynamoDB.from('my-table', options);
+// Create provider observable using builder pattern
+const provider$ = DynamoDB.from('my-table')
+  .withClient(dynamoDbClient)
+  .withHashKey('id')
+  .withRangeKey('timestamp')
+  .withSignal(abortController.signal);
 
 // Data to persist
 const data = [
@@ -46,9 +42,15 @@ result$.subscribe(item => {
 import { CloudReplaySubject } from 'cloudrx';
 import { DynamoDB } from 'cloudrx';
 
-// Create a cloud-backed replay subject
+// Create a cloud-backed replay subject with builder pattern
 const subject = new CloudReplaySubject(
-  DynamoDB.from('events-table', options)
+  DynamoDB.from('events-table')
+    .withClient(dynamoDbClient)
+    .withHashKey('userId')
+    .withRangeKey('timestamp')
+    .withTtlAttribute('expiresAt')
+    .withPollInterval(3000)
+    .withLogger(console)
 );
 
 // Subscribe to persisted events (includes replay of historical data)
@@ -59,6 +61,54 @@ subject.subscribe(event => {
 // Emit values that are automatically persisted
 subject.next({ type: 'user-action', data: { userId: 123 } });
 ```
+
+## Provider Builder Pattern
+
+CloudRx providers implement a fluent builder pattern for configuration, making provider setup more readable and maintainable.
+
+### DynamoDB Builder
+
+```typescript
+// Create a DynamoDB provider using the builder pattern
+const provider$ = DynamoDB.from('my-table')
+  .withClient(new DynamoDBClient({ region: 'us-east-1' }))
+  .withHashKey('userId')
+  .withRangeKey('timestamp')
+  .withTtlAttribute('expiresAt')
+  .withPollInterval(3000)
+  .withLogger(console);
+```
+
+**Available Methods**:
+- `withClient(client: DynamoDBClient)`: Set the DynamoDB client
+- `withHashKey(hashKey: string)`: Set the hash key attribute name
+- `withRangeKey(rangeKey: string)`: Set the range key attribute name
+- `withTtlAttribute(ttlAttribute: string)`: Set the TTL attribute name
+- `withPollInterval(pollInterval: number)`: Set the poll interval in milliseconds
+- `withLogger(logger: Logger)`: Set the logger
+- `withSignal(signal: AbortSignal)`: Set the abort signal
+
+### Memory Builder
+
+```typescript
+// Create a Memory provider using the builder pattern
+const provider$ = Memory.from('test-id')
+  .withLogger(console)
+  .withInitDelay(100)
+  .withEmissionDelay(50)
+  .withStorageDelay(10);
+```
+
+**Available Methods**:
+- `withInitDelay(delay: number)`: Set the initialization delay in milliseconds
+- `withEmissionDelay(delay: number)`: Set the emission delay in milliseconds
+- `withStorageDelay(delay: number)`: Set the storage delay in milliseconds
+- `withDelays(init?: number, emission?: number, storage?: number)`: Set all delays at once
+- `withLogger(logger: Logger)`: Set the logger
+- `withSignal(signal: AbortSignal)`: Set the abort signal
+
+**Builder Safety**:
+All builder methods throw an error if called after the provider has been initialized, preventing configuration changes after subscription.
 
 ## Key Architecture Components
 
@@ -122,6 +172,7 @@ subject.next({ message: 'new data' });
 ### DynamoDB Provider (`src/providers/aws/provider.ts`)
 
 **Complete AWS Integration**:
+- **Builder Pattern**: Fluent API for configuring provider options with type safety
 - **Table Management**: Automatic table creation/validation with proper schema and indexes
 - **Stream Processing**: Real-time shard discovery and record polling with configurable intervals
 - **TTL Support**: Configurable Time-To-Live for automatic record cleanup (default 'expires')
@@ -222,12 +273,17 @@ const persist = <T>(
 ```typescript
 // With Memory provider for testing
 const result$ = source$.pipe(
-  persist(Memory.from('test-id'))
+  persist(Memory.from('test-id')
+    .withLogger(console)
+    .withInitDelay(100))
 );
 
 // With DynamoDB provider for production
 const result$ = source$.pipe(
-  persist(DynamoDB.from('table-name', options))
+  persist(DynamoDB.from('table-name')
+    .withClient(new DynamoDBClient({ region: 'us-east-1' }))
+    .withHashKey('userId')
+    .withRangeKey('timestamp'))
 );
 
 // Graceful degradation (no provider)

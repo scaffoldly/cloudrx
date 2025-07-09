@@ -31,8 +31,11 @@ describe('aws-dynamodb', () => {
   });
 
   test('is-a-singleton', async () => {
-    const instance1$ = DynamoDB.from(testId(), options);
-    const instance2$ = DynamoDB.from(testId(), options);
+    const instance1$ = DynamoDB.from(testId())
+      .withClient(options.client!)
+      .withLogger(options.logger);
+    const instance2$ = DynamoDB.from(testId())
+      .withClient(options.client!);
     const instance1 = await firstValueFrom(instance1$);
     const instance2 = await firstValueFrom(instance2$);
     expect(instance1).toBe(instance2);
@@ -40,18 +43,54 @@ describe('aws-dynamodb', () => {
     expect(instance2.tableName).toBe(`cloudrx-${testId()}`);
   });
 
+  test('builder-pattern-works', async () => {
+    const instance$ = DynamoDB.from(testId())
+      .withClient(options.client!)
+      .withHashKey('customKey')
+      .withRangeKey('sortKey')
+      .withTtlAttribute('expiresAt')
+      .withPollInterval(3000)
+      .withLogger(console);
+    
+    const instance = await firstValueFrom(instance$);
+    expect(instance.hashKey).toBe('customKey');
+    expect(instance.rangeKey).toBe('sortKey');
+    expect(instance.ttlAttribute).toBe('expiresAt');
+    expect(instance.pollInterval).toBe(3000);
+  });
+
+  test('builder-throws-after-initialization', async () => {
+    const builder = DynamoDB.from(testId())
+      .withClient(options.client!);
+    
+    // First subscription initializes the builder
+    await firstValueFrom(builder);
+    
+    // Further configuration should throw
+    expect(() => builder.withHashKey('foo')).toThrow(/Cannot call withHashKey after initialization/);
+  });
+
   test('sets-table-arn', async () => {
-    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
+    const instance = await firstValueFrom(
+      DynamoDB.from(testId())
+        .withClient(options.client!)
+    );
     expect(instance.tableArn).toBeDefined();
   });
 
   test('sets-stream-arn', async () => {
-    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
+    const instance = await firstValueFrom(
+      DynamoDB.from(testId())
+        .withClient(options.client!)
+    );
     expect(instance.streamArn).toBeDefined();
   });
 
   test('stores-an-item', async () => {
-    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
+    const instance = await firstValueFrom(
+      DynamoDB.from(testId())
+        .withClient(options.client!)
+    );
     const testData: Data = { message: 'test', timestamp: performance.now() };
     const storedData = await firstValueFrom(instance.store(testData));
     expect(storedData).toEqual(testData);
@@ -60,7 +99,10 @@ describe('aws-dynamodb', () => {
   test('stores-items', async () => {
     const NUM_ITEMS = 20;
 
-    const instance = await firstValueFrom(DynamoDB.from(testId(), options));
+    const instance = await firstValueFrom(
+      DynamoDB.from(testId())
+        .withClient(options.client!)
+    );
     const testItems: Data[] = [];
     for (let i = 0; i < NUM_ITEMS; i++) {
       testItems.push({
@@ -116,7 +158,11 @@ describe('aws-dynamodb', () => {
       pollInterval: 1000, // 1 second for faster testing
     };
 
-    const provider = await firstValueFrom(DynamoDB.from(testId(), options));
+    const provider = await firstValueFrom(
+      DynamoDB.from(testId())
+        .withClient(options.client!)
+        .withPollInterval(1000)
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (provider as any)._streamClient = mockStreamClient;
     const emittedShards: Shard[] = [];
