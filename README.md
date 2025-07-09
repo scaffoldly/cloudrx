@@ -23,16 +23,13 @@ npm install cloudrx@beta
 
 ## Quick Start
 
-### CloudReplaySubject for Reactive Persistence
+### CloudReplaySubject for DynamoDB Persistence
 
 ```typescript
-import { CloudReplaySubject } from 'cloudrx';
-import { DynamoDBProvider } from 'cloudrx/providers';
+import { CloudReplaySubject, DynamoDB } from 'cloudrx';
 
 // Create a cloud-backed replay subject
-const subject = new CloudReplaySubject(
-  DynamoDBProvider.from('events-table', options)
-);
+const subject = new CloudReplaySubject(DynamoDB.from('events-table', options));
 
 // Subscribe to persisted events (includes replay)
 subject.subscribe((event) => {
@@ -62,7 +59,7 @@ subject.next({ type: 'user-action', data: { userId: 123 } });
 
 ### Providers
 
-- **`DynamoDBProvider`** - AWS DynamoDB with DynamoDB Streams for real-time event streaming
+- **`DynamoDB`** - AWS DynamoDB with DynamoDB Streams for real-time event streaming
   - Configurable TTL for automatic cleanup
   - Shard-based streaming with automatic discovery
   - Error handling with retry/fatal error distinction
@@ -83,13 +80,10 @@ The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically p
 **Usage:**
 
 ```typescript
-import { CloudReplaySubject } from 'cloudrx';
-import { DynamoDBProvider } from 'cloudrx/providers';
+import { CloudReplaySubject, DynamoDB } from 'cloudrx';
 
 // Create with DynamoDB provider
-const subject = new CloudReplaySubject(
-  DynamoDBProvider.from('events-table', options)
-);
+const subject = new CloudReplaySubject(DynamoDB.from('events-table', options));
 
 // Subscribe before or after seeding - both get full history
 subject.subscribe((item) => console.log('Historical + Live:', item));
