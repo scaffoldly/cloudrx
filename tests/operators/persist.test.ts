@@ -114,24 +114,28 @@ describe('persist', () => {
 
     describe('memory', () => {
       test('persist', async () => {
-        const provider = Memory.from(testId());
+        const provider = Memory.from(testId())
+          .withLogger(console);
         await run(persist(provider));
       });
 
       test('persist-replay', async () => {
-        const provider = Memory.from(testId());
+        const provider = Memory.from(testId())
+          .withLogger(console);
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
       });
 
       test('persist-observe', async () => {
-        const provider = Memory.from(testId());
+        const provider = Memory.from(testId())
+          .withLogger(console);
         const events = await run(persist(provider));
         await observe(persistReplay(provider), events);
       });
 
       test('persist-replay-observe', async () => {
-        const provider = Memory.from(testId());
+        const provider = Memory.from(testId())
+          .withLogger(console);
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
         await observe(persistReplay(provider), events);
@@ -159,24 +163,32 @@ describe('persist', () => {
       });
 
       test('persist', async () => {
-        const provider = DynamoDB.from(testId(), options);
+        const provider = DynamoDB.from(testId())
+          .withClient(options.client!);
+
         await run(persist(provider));
       });
 
       test('persist-replay', async () => {
-        const provider = DynamoDB.from(testId(), options);
+        const provider = DynamoDB.from(testId())
+          .withClient(options.client!);
+
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
       });
 
       test('persist-observe', async () => {
-        const provider = DynamoDB.from(testId(), options);
+        const provider = DynamoDB.from(testId())
+          .withClient(options.client!);
+
         const events = await run(persist(provider));
         await observe(persistReplay(provider), events);
       });
 
       test('persist-replay-observe', async () => {
-        const provider = DynamoDB.from(testId(), options);
+        const provider = DynamoDB.from(testId())
+          .withClient(options.client!);
+
         const events = await run(persist(provider));
         await replay(persistReplay(provider), events);
         await observe(persistReplay(provider), events);

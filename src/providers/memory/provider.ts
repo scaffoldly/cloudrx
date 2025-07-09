@@ -29,6 +29,19 @@ type Record = {
   data: Data;
 };
 
+// Add type definition for Memory constructor
+type MemoryConstructor = {
+  new(id: string, opts?: MemoryOptions): Memory;
+  from(id: string, opts?: MemoryOptions): Observable<Memory>;
+  
+  /**
+   * Create a new Memory provider builder
+   * 
+   * @param id The provider ID
+   */
+  from(id: string): import('./builder').MemoryBuilder;
+};
+
 export class Memory extends CloudProvider<Record, Record['id']> {
   private _all = new ReplaySubject<Record[]>();
   private _latest = new ReplaySubject<Record[]>(1);
@@ -212,3 +225,24 @@ export class Memory extends CloudProvider<Record, Record['id']> {
     };
   }
 }
+
+// Import the builder
+import { MemoryBuilder } from './builder';
+
+// Original from method implementation
+const originalFrom = Memory.from;
+
+// Enhanced Memory with builder support
+Memory.from = function(
+  id: string,
+  opts?: MemoryOptions
+): Observable<Memory> {
+  if (opts === undefined) {
+    return new MemoryBuilder(id);
+  }
+  return originalFrom.call(this, id, opts);
+};
+
+// Export Memory with enhanced typing
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const MemoryConstructorImpl = Memory as any as MemoryConstructor;
