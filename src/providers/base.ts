@@ -40,7 +40,7 @@ export type CloudOptions = {
 
 export type Matcher<TEvent> = (event: TEvent) => boolean;
 
-export class Abort extends AbortController {
+class Abort extends AbortController {
   constructor(signal?: AbortSignal) {
     super();
     if (signal) {
@@ -91,6 +91,9 @@ export class StreamEvent extends EventEmitter<{
 export abstract class CloudProvider<TEvent, TMarker>
   implements ICloudProvider<TEvent, TMarker>
 {
+  public static DEFAULT_ABORT = new Abort();
+  public static DEFAULT_LOGGER = new InfoLogger();
+
   private static instances: Record<
     string,
     Observable<ICloudProvider<unknown, unknown>>
@@ -123,8 +126,10 @@ export abstract class CloudProvider<TEvent, TMarker>
   ) {
     this._events.setMaxListeners(100);
 
-    this._logger = opts?.logger ?? new InfoLogger();
-    this._signal = opts?.signal ?? new Abort().signal;
+    this._logger = opts?.logger ?? CloudProvider.DEFAULT_LOGGER;
+    this._signal = new Abort(
+      opts?.signal ?? CloudProvider.DEFAULT_ABORT.signal
+    ).signal;
 
     this._signal.addEventListener('abort', () => {
       this._events.emit('end');

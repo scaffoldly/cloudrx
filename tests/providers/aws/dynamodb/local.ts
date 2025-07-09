@@ -4,7 +4,7 @@ import {
   TestContainer,
 } from 'testcontainers';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { Logger } from 'cloudrx';
+import { CloudProvider, Logger } from 'cloudrx';
 
 export class DynamoDBLocalContainer {
   private container: TestContainer;
@@ -12,15 +12,23 @@ export class DynamoDBLocalContainer {
   private client: DynamoDBClient | null = null;
   private logger: Logger;
 
-  constructor(logger: Logger) {
-    this.logger = logger;
+  constructor() {
+    this.logger = CloudProvider.DEFAULT_LOGGER || console;
     this.container = new GenericContainer('amazon/dynamodb-local:latest')
       .withExposedPorts(8000)
       .withCommand(['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']);
   }
 
-  async start(): Promise<void> {
+  async start(signal: AbortSignal): Promise<void> {
     try {
+      signal.addEventListener('abort', () => {
+        this.stop().catch((err) => {
+          this.logger.error?.(
+            `Failed to stop DynamoDB Local container: ${err}`
+          );
+        });
+      });
+
       this.logger.info?.('Starting DynamoDB Local container...');
       this.startedContainer = await this.container.start();
 

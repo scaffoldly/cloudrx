@@ -11,7 +11,6 @@ export {
   Matcher,
   RetryError,
   FatalError,
-  Abort,
   StreamEvent,
   // Specific implementations
   DynamoDB,

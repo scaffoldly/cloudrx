@@ -6,13 +6,24 @@ import {
   MonoTypeOperatorFunction,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
-import { persist, persistReplay } from 'cloudrx';
+import { CloudProvider, persist, persistReplay } from 'cloudrx';
 import { DynamoDB, DynamoDBOptions, Memory } from 'cloudrx';
 import { testId } from '../setup';
 
 type Data = { message: string; timestamp: number };
 
 describe('persist', () => {
+  const abort = new AbortController();
+
+  beforeAll(() => {
+    CloudProvider.DEFAULT_ABORT = abort;
+    CloudProvider.DEFAULT_LOGGER = console;
+  });
+
+  afterAll(() => {
+    abort.abort();
+  });
+
   describe('hot', () => {
     const run = async (
       operator: MonoTypeOperatorFunction<Data>
@@ -132,8 +143,8 @@ describe('persist', () => {
       let options: DynamoDBOptions = {};
 
       beforeAll(async () => {
-        container = new DynamoDBLocalContainer(console);
-        await container.start();
+        container = new DynamoDBLocalContainer();
+        await container.start(abort.signal);
         options.client = container.getClient();
       });
 

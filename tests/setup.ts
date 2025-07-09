@@ -1,4 +1,3 @@
-import { setMaxListeners } from 'events';
 import type { Config } from '@jest/types';
 
 export function testId(): string {
@@ -11,8 +10,6 @@ export function testId(): string {
 export default async function setup(
   globalConfig: Config.GlobalConfig
 ): Promise<void> {
-  setMaxListeners(50);
-
   // Detect Jest flags from the global configuration
   const isVerbose = globalConfig.verbose || false;
   const isSilent = globalConfig.silent || false;
@@ -26,10 +23,7 @@ export default async function setup(
     process.env.JEST_LOG_LEVEL = 'info';
   }
 
-  // Optional: log what we detected (only visible when not silent)
-  if (!isSilent) {
-    console.log(
-      `[Global Setup] Jest flags detected - verbose: ${isVerbose}, silent: ${isSilent}, log level: ${process.env.JEST_LOG_LEVEL}`
-    );
-  }
+  console.log(
+    `\n[Global Setup] Jest flags detected - verbose: ${isVerbose}, silent: ${isSilent}, log level: ${process.env.JEST_LOG_LEVEL}\n`
+  );
 }
