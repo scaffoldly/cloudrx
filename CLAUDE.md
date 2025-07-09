@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-CloudRx is a TypeScript library for streaming cloud provider events using RxJS. It provides reactive interfaces for cloud services like DynamoDB Streams.
+CloudRx is a sophisticated TypeScript library that extends RxJS to provide cloud-backed reactive streams with automatic persistence and replay capabilities. It creates reactive interfaces for cloud services like DynamoDB Streams, enabling real-time event streaming with persistent storage and cross-instance data sharing.
 
 ## Usage Examples
 
@@ -119,14 +119,54 @@ subject.next({ message: 'new data' });
 - **Solution**: Changed to extend ReplaySubject, enabling late subscribers to receive historical emissions
 - **Impact**: Backfill tests now pass, ensuring consistent behavior across all scenarios
 
-### DynamoDB Provider (`src/providers/aws/dynamodb.ts`)
+### DynamoDB Provider (`src/providers/aws/provider.ts`)
 
-- **Singleton Pattern**: Uses `shareReplay(1)` to prevent race conditions
-- **Shard Polling**: Configurable interval (default 5000ms) with error handling
-- **Configuration**: TTL attribute configurable (default 'expires')
-- **Resource Cleanup**: Proper subscription management with abort signals
+**Complete AWS Integration**:
+- **Table Management**: Automatic table creation/validation with proper schema and indexes
+- **Stream Processing**: Real-time shard discovery and record polling with configurable intervals
+- **TTL Support**: Configurable Time-To-Live for automatic record cleanup (default 'expires')
+- **Error Handling**: Comprehensive error handling with retry logic and proper AWS SDK integration
+- **Resource Management**: Proper subscription cleanup with abort signals and connection pooling
+- **Type Safety**: Full TypeScript generics with AWS SDK v3 types and null safety
+- **Singleton Pattern**: Uses `shareReplay(1)` to prevent race conditions and duplicate table creation
 
 ### RxJS Operators (`src/operators/`)
+
+#### `persistReplay` Operator
+
+Combines persistence with historical data replay for seamless cloud-backed streaming.
+
+**Core Features**:
+- **Dual Stream Merge**: Combines `persist` operator with provider's `stream(true)` for complete coverage
+- **Historical Backfill**: Automatically replays all previously persisted data on subscription
+- **Marker Cleanup**: Removes internal `__marker__` properties before final emission
+- **Provider Integration**: Works with any CloudProvider implementation
+- **Completion Handling**: Properly coordinates completion between persistence and stream sources
+
+**Usage Pattern**:
+```typescript
+const result$ = source$.pipe(
+  persistReplay(provider$)
+);
+```
+
+#### `semaphore` Operator
+
+Provides concurrency control for cloud operations to prevent rate limiting.
+
+**Core Features**:
+- **Concurrency Limiting**: Configurable maximum concurrent operations
+- **Queue Management**: Internal queue for pending operations
+- **Observable Input Support**: Handles any `ObservableInput` type
+- **Resource Management**: Proper cleanup and error handling
+- **Backpressure Handling**: Manages flow control for cloud provider limits
+
+**Usage Pattern**:
+```typescript
+const controlled$ = source$.pipe(
+  semaphore(5, (item) => cloudOperation(item))
+);
+```
 
 #### `persist` Operator Architecture
 
@@ -293,19 +333,86 @@ npm run build             # Build for production
 - **Performance**: Avoid repetitive object creation within individual test cases
 - **Verbosity Control**: All test components should respect Jest's `--verbose`, `--silent`, and default modes
 
-## Testing Notes
+## Testing Architecture
 
-### DynamoDB Local
+### Test Infrastructure
 
-- Uses DynamoDB Local container for integration tests
-- Stream polling requires actual DynamoDB Streams (not mocked)
-- TTL settings need time to propagate in real AWS
+**Jest Configuration**:
+- **TypeScript Support**: Complete Jest setup with ts-jest and TypeScript compilation
+- **Test Containers**: Docker-based DynamoDB Local container for integration testing
+- **Logging System**: Sophisticated logging with automatic Jest flag detection (`--verbose`, `--silent`)
+- **Global Setup**: Centralized test setup with proper resource management
+- **Timeout Configuration**: Appropriate timeouts for cloud operations and container startup
+
+**Test Utilities**:
+- **Helper Functions**: `getTestName()` for sanitizing test names for DynamoDB table names
+- **Logger Factory**: `createTestLogger()` for consistent logging across test suites
+- **Container Management**: `DynamoDBLocalContainer` with proper lifecycle management
+- **Resource Cleanup**: Proper cleanup patterns with abort controllers and subscription management
+
+### Testing Patterns
+
+**Provider Testing**:
+- **Dual Provider Coverage**: Same test suites run against both Memory and DynamoDB providers
+- **Singleton Testing**: Verification that `CloudProvider.from()` returns same instances
+- **Stream Testing**: Comprehensive streaming scenarios with backfill and live data
+- **Error Handling**: Testing of retry/fatal error scenarios and abort signal propagation
+- **Resource Management**: Memory leak prevention and proper cleanup verification
+
+**Operator Testing**:
+- **Observable Type Coverage**: Testing across cold observables, Subject, BehaviorSubject, ReplaySubject, AsyncSubject
+- **Timing Scenarios**: Race condition testing with configurable delays and hot observables
+- **Completion Logic**: Verification of proper completion coordination between sources
+- **Error Propagation**: Testing of both provider and source error scenarios
+- **Buffer Management**: Verification of internal buffering and sequential processing
+
+**Subject Testing**:
+- **Backfill Scenarios**: Testing historical data replay for late subscribers
+- **Cross-Instance Sharing**: Verification that multiple subjects share data via same provider
+- **Persistence Integration**: Testing automatic persistence of new emissions
+- **Snapshot Testing**: Verification of complete historical data retrieval
+- **Shadowed Testing**: Testing multiple subjects with same provider receiving all events
 
 ### Test Structure
 
-- Unit tests in `tests/` directory
-- Integration tests in `integration-tests/` directory
-- Test utilities in `tests/setup/`
+**Directory Organization**:
+- **Unit Tests**: `tests/` directory with provider-specific subdirectories
+- **Integration Tests**: Comprehensive DynamoDB Local integration within main test suite
+- **Test Utilities**: `tests/setup/` and `tests/utils/` for shared infrastructure
+- **Provider Tests**: `tests/providers/` with Memory and AWS subdirectories
+- **Operator Tests**: `tests/operators/` with comprehensive RxJS operator testing
+- **Subject Tests**: `tests/subjects/` with CloudReplaySubject testing
+
+### Test Execution
+
+**Command Variations**:
+- **Standard**: `npm test` - Info-level logs with structured pino output
+- **Verbose**: `npm test -- --verbose` - Debug-level logs for troubleshooting
+- **Silent**: `npm test -- --silent` - No logs for clean CI runs
+- **Watch**: `npm run test:watch` - Development mode with file watching
+- **Integration**: `npm run test:integration` - Full integration test suite
+
+**DynamoDB Local**:
+- **Container Integration**: Uses testcontainers for Docker-based DynamoDB Local
+- **Real Streaming**: Actual DynamoDB Streams (not mocked) for realistic testing
+- **TTL Behavior**: Tests account for TTL propagation timing in real AWS
+- **Resource Management**: Proper container startup/shutdown with abort signals
+
+### Test Development Guidelines
+
+**Best Practices**:
+- **Test Helper Functions**: Reusable functions for common test patterns (seed, backfill, snapshot)
+- **Timing Patterns**: Use `setTimeout()` with appropriate delays for async operations
+- **Resource Cleanup**: Always complete subjects and abort controllers in test teardown
+- **Error Scenarios**: Test both normal shutdown (AbortError) and actual error conditions
+- **Provider Agnostic**: Write tests that work with both Memory and DynamoDB providers
+
+**Common Test Patterns**:
+- **Seed-Test-Verify**: Seed data, perform operation, verify results
+- **Late Subscription**: Test backfill by subscribing after data seeding
+- **Cross-Instance**: Test data sharing between multiple subject instances
+- **Abort Testing**: Test proper cleanup with abort controllers
+- **Timing Control**: Use configurable delays for race condition testing
 
 ### Memory Provider (`src/providers/memory/provider.ts`)
 
@@ -456,10 +563,41 @@ Memory.from('test-id', {
 
 ## Dependencies
 
-- **RxJS**: Core reactive programming library
-- **AWS SDK v3**: For DynamoDB and DynamoDB Streams
-- **Jest**: Testing framework
-- **ESLint**: Code linting with TypeScript support
+### Core Dependencies
+
+- **RxJS 7+**: Core reactive programming library (peer dependency)
+- **AWS SDK v3**: Complete AWS integration for DynamoDB and DynamoDB Streams
+- **timeflake**: Distributed unique ID generation for record identification
+- **bn.js**: Big number library for precise numerical operations
+
+### Development Dependencies
+
+**Testing Framework**:
+- **Jest**: Primary testing framework with TypeScript support
+- **ts-jest**: TypeScript integration for Jest
+- **testcontainers**: Docker container management for DynamoDB Local
+- **@types/jest**: TypeScript definitions for Jest
+
+**Code Quality**:
+- **ESLint**: Comprehensive linting with TypeScript support
+- **@typescript-eslint/parser**: TypeScript parser for ESLint
+- **@typescript-eslint/eslint-plugin**: TypeScript-specific linting rules
+- **Prettier**: Code formatting with consistent style
+
+**Build Tools**:
+- **TypeScript**: Core TypeScript compiler
+- **rimraf**: Cross-platform directory cleanup
+- **npm-run-all**: Parallel and sequential npm script execution
+
+**Logging & Utilities**:
+- **pino**: High-performance structured logging
+- **pino-pretty**: Pretty formatting for development logs
+
+### Peer Dependencies
+
+- **RxJS**: Version 7+ required (allows consumer version choice)
+- **AWS SDK v3**: Optional for DynamoDB provider usage
+- **Node.js**: Version 20+ required for modern JavaScript features
 
 ## Performance Considerations
 
@@ -475,9 +613,42 @@ Memory.from('test-id', {
 
 ## Development Workflow
 
-- after you make changes, run `npm run lint` and fix any issues
-- always run `npm test` and `npx tsc --noEmit` before committing to ensure all tests pass
-- fix any failing tests or type errors before committing
+### Pre-Commit Checklist
+
+**Required Steps**:
+1. **Code Quality**: Run `npm run lint` and fix any ESLint issues
+2. **Type Safety**: Run `npx tsc --noEmit` to ensure TypeScript compilation
+3. **Test Coverage**: Run `npm test` to ensure all tests pass
+4. **Integration Tests**: Run full test suite including DynamoDB Local integration
+5. **Build Verification**: Run `npm run build` to ensure production build works
+
+### Development Process
+
+**Code Changes**:
+- **Incremental Testing**: Run relevant test suites during development
+- **Type-First Development**: Ensure TypeScript types are correct before implementation
+- **Provider Compatibility**: Test changes against both Memory and DynamoDB providers
+- **Documentation Updates**: Update CLAUDE.md with architectural insights and patterns
+
+**Testing Strategy**:
+- **Unit Tests First**: Write unit tests with Memory provider for fast feedback
+- **Integration Verification**: Validate with DynamoDB Local for real-world scenarios
+- **Edge Case Coverage**: Test error conditions, abort scenarios, and timing edge cases
+- **Performance Testing**: Verify memory usage and resource cleanup
+
+### Build System
+
+**TypeScript Configuration**:
+- **Strict Mode**: All strict TypeScript options enabled
+- **Source Maps**: Full source map generation for debugging
+- **Declaration Files**: Automatic `.d.ts` generation for library consumers
+- **Target Compatibility**: ES2020 target with Node.js 20+ compatibility
+
+**Output Structure**:
+- **Dist Directory**: Compiled JavaScript with source maps
+- **Type Declarations**: Complete TypeScript definitions
+- **ES Modules**: Modern ES module output for tree-shaking
+- **CommonJS**: Compatible CommonJS exports for legacy consumers
 
 ## Development Principles
 
@@ -802,3 +973,91 @@ export class CloudReplaySubject<T> extends ReplaySubject<T>
 3. **Subject Type Selection**: Choose Subject type (Subject, ReplaySubject, BehaviorSubject) based on replay requirements
 4. **Interface Consistency**: Maintain consistent interfaces across providers while accommodating provider-specific behaviors
 5. **Comprehensive Testing**: Test both immediate subscription and late subscription scenarios for backfill functionality
+
+## Recent Session: Comprehensive Project Analysis & Documentation Update (2025-07-09)
+
+### Complete Architecture Analysis
+
+**Project Structure Deep Dive**:
+- **Base Architecture**: Analyzed `src/providers/base.ts` with CloudProvider abstract class and sophisticated error handling
+- **Provider Implementations**: Detailed analysis of both DynamoDB and Memory providers with their distinct architectures
+- **Operator System**: Comprehensive analysis of persist, persistReplay, and semaphore operators
+- **Subject Architecture**: Deep dive into CloudReplaySubject with dual subscription model
+- **Testing Infrastructure**: Complete analysis of Jest configuration, test containers, and logging systems
+
+**Key Architectural Insights**:
+- **Singleton Pattern**: CloudProvider instances cached by ID for resource efficiency
+- **Dual Subscription Model**: CloudReplaySubject uses separate streams for persistence and replay
+- **Provider Agnostic Design**: All operators work with any CloudProvider implementation
+- **Comprehensive Error Handling**: Clear distinction between RetryError and FatalError
+- **Resource Management**: Sophisticated cleanup with abort controllers and subscription management
+
+### Testing Strategy Analysis
+
+**Multi-Provider Testing**:
+- **Same Test Suite**: Identical tests run against both Memory and DynamoDB providers
+- **Realistic Integration**: DynamoDB Local containers for true integration testing
+- **Timing Control**: Configurable delays for race condition and timing scenario testing
+- **Resource Cleanup**: Comprehensive cleanup patterns with abort controllers
+
+**Test Pattern Categories**:
+- **Provider Tests**: Singleton behavior, streaming, error handling, resource management
+- **Operator Tests**: Observable type coverage, timing scenarios, completion logic, error propagation
+- **Subject Tests**: Backfill scenarios, cross-instance sharing, persistence integration, snapshot testing
+- **Integration Tests**: Full DynamoDB Local integration with real streaming
+
+### Development Workflow Enhancement
+
+**Comprehensive Build System**:
+- **TypeScript Configuration**: Strict mode with complete type safety
+- **Source Maps**: Full debugging support with source map generation
+- **Declaration Files**: Automatic .d.ts generation for library consumers
+- **Multi-Format Output**: ES modules and CommonJS for broad compatibility
+
+**Quality Assurance**:
+- **Pre-Commit Checklist**: Mandatory linting, type checking, testing, and build verification
+- **Test Execution Variants**: Standard, verbose, silent, and watch modes
+- **Integration Verification**: DynamoDB Local testing for real-world scenarios
+- **Performance Testing**: Memory usage and resource cleanup verification
+
+### Documentation Completeness
+
+**Architectural Documentation**:
+- **Component Deep Dives**: Detailed analysis of each architectural component
+- **Design Pattern Explanations**: Comprehensive explanation of singleton, observer, factory, and strategy patterns
+- **Testing Philosophy**: Complete testing approach with multi-provider coverage
+- **Error Handling Strategy**: Detailed error classification and handling approaches
+
+**Development Guidelines**:
+- **Best Practices**: Comprehensive coding standards and architectural principles
+- **Test Development**: Detailed testing patterns and helper function usage
+- **Performance Considerations**: Memory management and resource efficiency guidelines
+- **Security Notes**: Credential handling and permission management
+
+### Future Architecture Considerations
+
+**Extensibility Features**:
+- **Provider Interface**: Well-defined interface for adding new cloud providers
+- **Logger Interface**: Flexible logging support for various logging libraries
+- **Configuration System**: Extensive configuration options for all components
+- **Generic Type System**: Comprehensive TypeScript generics for type safety
+
+**Performance Optimizations**:
+- **Stream Optimization**: Efficient stream sharing with shareReplay(1)
+- **Memory Management**: Proper subscription cleanup and resource disposal
+- **Concurrency Control**: Semaphore operator for cloud provider rate limiting
+- **Caching Strategy**: Provider instance caching for resource efficiency
+
+### Session Learnings
+
+**Documentation Strategy**:
+- **Complete Coverage**: Document not just functionality but internal architecture and design decisions
+- **Testing Integration**: Include comprehensive testing patterns and infrastructure details
+- **Development Workflow**: Complete development process from code changes to deployment
+- **Architecture Evolution**: Track how patterns mature through usage and testing
+
+**Best Practices Established**:
+- **Systematic Analysis**: Comprehensive project analysis reveals architectural patterns
+- **Multi-Provider Design**: Architecture supports multiple cloud providers seamlessly
+- **Testing Excellence**: Sophisticated testing infrastructure with real cloud integration
+- **Documentation Completeness**: Comprehensive documentation enables effective maintenance and extension
