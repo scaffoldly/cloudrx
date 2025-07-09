@@ -38,7 +38,7 @@
     "typescript"
   ],
   "author": "Scaffoldly <github.com/scaffoldly>",
-  "license": "GPL-3.0",
+  "license": "Apache-2.0",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.823.0",
     "@aws-sdk/client-dynamodb-streams": "^3.823.0",
@@ -88,9 +88,12 @@
         "displayName": "unit",
         "preset": "ts-jest",
         "transform": {
-          "^.+\\.tsx?$": ["ts-jest", {
-            "tsconfig": "tests/tsconfig.json"
-          }]
+          "^.+\\.tsx?$": [
+            "ts-jest",
+            {
+              "tsconfig": "tests/tsconfig.json"
+            }
+          ]
         },
         "moduleNameMapper": {
           "^cloudrx$": "<rootDir>/src/index.ts"
