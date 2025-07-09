@@ -23,7 +23,11 @@ npm install cloudrx@beta
 
 ## Usage
 
-### CloudReplaySubject using DynamoDB
+### `CloudReplaySubject<T>` (`extends ReplaySubject<T>`)
+
+CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persists all emissions to a cloud provider and replays historical data to new subscribers. Multiple CloudReplaySubjects using the same provider automatically share all events, making it perfect for distributed event streaming and cross-instance communication.
+
+#### DynamoDB
 
 ```typescript
 import { CloudReplaySubject, DynamoDB } from 'cloudrx';
@@ -70,6 +74,50 @@ subject2.subscribe((event) => {
 // Subject2 received: { type: 'user-action', data: { userId: 123, action: 'purchase' } }
 // Subject2 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
 ```
+
+##### DynamoDBOptions
+
+The `DynamoDB.from()` method accepts an optional `DynamoDBOptions` object to configure the DynamoDB provider:
+
+| Option         | Type             | Default                | Description                                             |
+| -------------- | ---------------- | ---------------------- | ------------------------------------------------------- |
+| `client`       | `DynamoDBClient` | `new DynamoDBClient()` | Pre-configured DynamoDBClient instance                  |
+| `hashKey`      | `string`         | `'hashKey'`            | Name of the hash key attribute in the DynamoDB table    |
+| `rangeKey`     | `string`         | `'rangeKey'`           | Name of the range key attribute in the DynamoDB table   |
+| `ttlAttribute` | `string`         | `'expires'`            | Name of the TTL attribute for automatic record cleanup  |
+| `pollInterval` | `number`         | `5000`                 | Stream polling interval in milliseconds                 |
+| `logger`       | `Logger`         | `undefined`            | Optional logger instance (console-compatible interface) |
+| `signal`       | `AbortSignal`    | `undefined`            | Optional AbortSignal for graceful cleanup               |
+
+```typescript
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { CloudReplaySubject, DynamoDB } from 'cloudrx';
+
+const options = {
+  client: new DynamoDBClient({ region: 'us-east-1' }),
+  hashKey: 'userId',
+  rangeKey: 'timestamp',
+  ttlAttribute: 'expiresAt',
+  pollInterval: 3000,
+  logger: console,
+};
+
+const subject = new CloudReplaySubject(DynamoDB.from('user-events', options));
+```
+
+**Table Management:**
+
+The DynamoDB provider automatically:
+
+- Creates the table if it doesn't exist with the specified hash and range keys
+- Enables DynamoDB Streams with `NEW_AND_OLD_IMAGES` view type
+- Configures TTL on the specified attribute
+- Validates existing table schema matches the specified keys
+- Sets up proper indexes and billing mode (`PAY_PER_REQUEST`)
+
+**Generated Table Name:**
+
+Tables are automatically named with the pattern `cloudrx-{id}` where `{id}` is the first parameter passed to `DynamoDB.from()`.
 
 ## Features
 
