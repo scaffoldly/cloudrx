@@ -534,7 +534,11 @@ export class DynamoDBImpl<
           )
           .subscribe({
             next: ({ Records = [], NextShardIterator }) => {
-              subscriber.next(Records);
+              subscriber.next(
+                Records.filter(
+                  (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
+                )
+              );
               if (NextShardIterator) {
                 subscriptions.push(
                   asyncScheduler.schedule(
