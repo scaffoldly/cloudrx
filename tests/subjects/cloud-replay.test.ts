@@ -186,6 +186,39 @@ describe('cloud-replay', () => {
     });
   };
 
+  const expired = async (
+    provider: Observable<ICloudProvider<unknown, unknown>>
+  ): Promise<void> => {
+    const subject = new CloudReplaySubject<Data>(provider);
+
+    const now = Date.now();
+    const expiredItem = {
+      message: 'expired-item',
+      timestamp: now,
+    };
+
+    const expiredEvents = await new Promise<Data[]>((resolve) => {
+      const incoming: Data[] = [];
+      subject.on('expired', (value) => {
+        incoming.push(value);
+      });
+
+      // Use the new expires parameter API
+      const expiresDate = new Date(now + 1000);
+      subject.next(expiredItem, expiresDate);
+
+      setTimeout(() => {
+        resolve(incoming);
+      }, 5000);
+    });
+
+    expect(expiredEvents).toHaveLength(1);
+    expect(expiredEvents[0]).toEqual({
+      message: 'expired-item',
+      timestamp: now,
+    });
+  };
+
   describe('memory', () => {
     test('snapshot', async () => {
       const provider = Memory.from(testId());
@@ -221,6 +254,10 @@ describe('cloud-replay', () => {
 
     test('readme-usage', async () => {
       await readmeUsage(Memory.from(testId()));
+    });
+
+    test('expired', async () => {
+      await expired(Memory.from(testId()));
     });
   });
 
@@ -272,6 +309,10 @@ describe('cloud-replay', () => {
 
     test('readme-usage', async () => {
       await readmeUsage(DynamoDB.from(testId(), options));
+    });
+
+    test('expired', async () => {
+      await expired(DynamoDB.from(testId(), options));
     });
   });
 });

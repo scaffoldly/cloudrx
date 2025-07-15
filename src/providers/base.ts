@@ -167,10 +167,15 @@ export abstract class CloudProvider<TEvent, TMarker>
     return new Observable<TEvent>((subscriber) => {
       const observer: Observer<TEvent> = {
         next: (event) => {
-          const unmarshalled = this._unmarshall(event);
-          if (unmarshalled.__expires && Date.now() >= unmarshalled.__expires) {
-            this._events.emit('expired', event);
-            return;
+          if (all) {
+            const unmarshalled = this._unmarshall(event);
+            if (
+              unmarshalled.__expires &&
+              Date.now() >= unmarshalled.__expires
+            ) {
+              this._events.emit('expired', event);
+              return;
+            }
           }
           subscriber.next(event);
         },

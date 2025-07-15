@@ -12,7 +12,7 @@ import {
 } from 'rxjs';
 
 export class CloudReplaySubject<T> extends ReplaySubject<T> {
-  private inner = new Subject<T>();
+  private inner = new Subject<Expireable<T>>();
   private emitter = new EventEmitter<{ expired: [T] }>();
 
   private persist: Subscription;
@@ -62,8 +62,15 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     );
   }
 
-  override next(value: T | Expireable<T>): void {
-    this.inner.next(value);
+  override next(value: T, expires?: Date): void {
+    if (!expires) {
+      return this.inner.next(value as Expireable<T>);
+    }
+
+    this.inner.next({
+      ...value,
+      __expires: Math.floor(expires.getTime() / 1000),
+    });
   }
 
   override error(err: unknown): void {
