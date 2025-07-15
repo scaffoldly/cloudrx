@@ -634,7 +634,10 @@ export class DynamoDBImpl<
     });
   }
 
-  protected _store<T>(item: T): Observable<Matcher<_Record>> {
+  protected _store<T>(
+    item: T,
+    matched?: (event: _Record) => void
+  ): Observable<Matcher<_Record>> {
     return new Observable<Matcher<_Record>>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Storing item:`, item);
 
@@ -653,7 +656,13 @@ export class DynamoDBImpl<
         if (!dynamoRecord?.Keys) return false;
         const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
         const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
-        return eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue;
+
+        if (eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue) {
+          matched?.(event);
+          return true;
+        }
+
+        return false;
       };
 
       const subscription = from(

@@ -151,7 +151,10 @@ export class Memory extends CloudProvider<Record, Record['id']> {
     );
   }
 
-  protected _store<T>(item: T): Observable<(event: Record) => boolean> {
+  protected _store<T>(
+    item: T,
+    matched?: (event: Record) => void
+  ): Observable<(event: Record) => boolean> {
     return new Observable<Matcher<Record>>((subscriber) => {
       if (!this._initialized) {
         this.logger.debug?.(`[${this.id}] Store requested but not initialized`);
@@ -183,7 +186,13 @@ export class Memory extends CloudProvider<Record, Record['id']> {
             this._all.next([record]);
             this._latest.next([record]);
 
-            const matcher = (event: Record): boolean => event.id === id;
+            const matcher = (event: Record): boolean => {
+              if (event.id === id) {
+                matched?.(event);
+                return true;
+              }
+              return false;
+            };
             subscriber.next(matcher);
             subscriber.complete();
           })

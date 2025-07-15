@@ -21,7 +21,8 @@ export type Streamed<T, TMarker> = T & {
   __marker__?: TMarker;
 };
 
-export interface ICloudProvider<TEvent, TMarker> {
+export interface ICloudProvider<TEvent, TMarker>
+  extends EventEmitter<{ expired: [TEvent] }> {
   get id(): string;
   get signal(): AbortSignal;
   get logger(): Logger;
@@ -37,57 +38,18 @@ export type CloudOptions = {
   logger?: Logger;
 };
 
-export type Matcher<TEvent> = (event: TEvent) => boolean;
-
-export class Abort extends AbortController {
-  constructor(signal?: AbortSignal) {
-    super();
-    if (signal) {
-      signal.addEventListener('abort', () => this.abort(signal.reason));
-    } else {
-      // Hook into standard Node.js process events
-      ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT'].forEach((signalType) => {
-        process.on(signalType, () => {
-          this.abort(new Error(`Aborted by ${signalType}`));
-        });
-      });
-
-      // Hook into process exit events
-      process.on('beforeExit', (code) => {
-        this.abort(new Error(`Process exiting with code: ${code}`));
-      });
-
-      process.on('exit', (code) => {
-        this.abort(new Error(`Process exit with code: ${code}`));
-      });
-
-      // Hook into error events
-      process.on('uncaughtException', (error) => {
-        this.abort(error);
-      });
-
-      process.on('unhandledRejection', (reason) => {
-        this.abort(reason);
-      });
-    }
-  }
-
-  override abort(reason?: unknown): void {
-    super.abort(reason);
-  }
-}
+export type Matcher<TEvent> = (
+  event: TEvent,
+  matched?: (event: TEvent) => void
+) => boolean;
 
 export class StreamEvent extends EventEmitter<{
   start: [];
   end: [];
 }> {}
 
-/**
- * Abstract base class for cloud providers that stream events.
- * Implementations must provide initialization and streaming logic.
- * @template TEvent The type of events this provider emits
- */
 export abstract class CloudProvider<TEvent, TMarker>
+  extends EventEmitter<{ expired: [TEvent] }>
   implements ICloudProvider<TEvent, TMarker>
 {
   private static aborts: AbortController[] = [];
@@ -131,6 +93,8 @@ export abstract class CloudProvider<TEvent, TMarker>
     public readonly id: string,
     opts?: CloudOptions
   ) {
+    super({ captureRejections: true });
+
     this._events.setMaxListeners(100);
 
     this._logger = opts?.logger ?? CloudProvider.DEFAULT_LOGGER;
@@ -160,7 +124,10 @@ export abstract class CloudProvider<TEvent, TMarker>
   protected abstract _init(): Observable<this>;
   protected abstract _snapshot<T>(): Observable<T[]>;
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
-  protected abstract _store<T>(item: T): Observable<Matcher<TEvent>>;
+  protected abstract _store<T>(
+    item: T,
+    matched?: (event: TEvent) => void
+  ): Observable<Matcher<TEvent>>;
   protected abstract _unmarshall<T>(event: TEvent): Streamed<T, unknown>;
 
   public init(): Observable<this> {
@@ -203,6 +170,8 @@ export abstract class CloudProvider<TEvent, TMarker>
         };
       }
 
+      let started = false;
+
       if (!this._stream$) {
         this.logger.debug?.(`[${this.id}] Creating new 'latest' stream`);
         this._stream$ = this._stream(false).pipe(
@@ -223,7 +192,12 @@ export abstract class CloudProvider<TEvent, TMarker>
                 `[${this.id}] Stream emitted ${events.length} events`
               );
             }
-            this._events.emit('start');
+
+            if (!started) {
+              started = true;
+              this.logger.debug?.(`[${this.id}] Stream started`);
+              this._events.emit('start');
+            }
           }),
           concatAll()
         )
