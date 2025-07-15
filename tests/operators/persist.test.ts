@@ -13,15 +13,12 @@ import { testId } from '../setup';
 type Data = { message: string; timestamp: number };
 
 describe('persist', () => {
-  const abort = new AbortController();
-
   beforeAll(() => {
-    CloudProvider.DEFAULT_ABORT = abort;
     CloudProvider.DEFAULT_LOGGER = console;
   });
 
   afterAll(() => {
-    abort.abort();
+    CloudProvider.abort('Tests complete');
   });
 
   describe('hot', () => {
@@ -144,7 +141,7 @@ describe('persist', () => {
 
       beforeAll(async () => {
         container = new DynamoDBLocalContainer();
-        await container.start(abort.signal);
+        await container.start();
         options.client = container.getClient();
       });
 
@@ -153,9 +150,7 @@ describe('persist', () => {
       afterEach(() => {});
 
       afterAll(async () => {
-        if (container) {
-          await container.stop();
-        }
+        await container.stop();
       });
 
       test('persist', async () => {

@@ -34,7 +34,6 @@ export interface ICloudProvider<TEvent, TMarker> {
 }
 
 export type CloudOptions = {
-  signal?: AbortSignal;
   logger?: Logger;
 };
 
@@ -91,7 +90,7 @@ export class StreamEvent extends EventEmitter<{
 export abstract class CloudProvider<TEvent, TMarker>
   implements ICloudProvider<TEvent, TMarker>
 {
-  public static DEFAULT_ABORT = new Abort();
+  private static aborts: AbortController[] = [];
   public static DEFAULT_LOGGER = new InfoLogger();
 
   private static instances: Record<
@@ -120,6 +119,14 @@ export abstract class CloudProvider<TEvent, TMarker>
     return CloudProvider.instances[id] as Observable<Provider>;
   }
 
+  static abort(reason?: unknown): void {
+    CloudProvider.aborts.forEach((abort) => {
+      if (!abort.signal.aborted) {
+        abort.abort(reason);
+      }
+    });
+  }
+
   protected constructor(
     public readonly id: string,
     opts?: CloudOptions
@@ -127,13 +134,18 @@ export abstract class CloudProvider<TEvent, TMarker>
     this._events.setMaxListeners(100);
 
     this._logger = opts?.logger ?? CloudProvider.DEFAULT_LOGGER;
-    this._signal = new Abort(
-      opts?.signal ?? CloudProvider.DEFAULT_ABORT.signal
-    ).signal;
+
+    const abort = new AbortController();
+    CloudProvider.aborts.push(abort);
+    this._signal = abort.signal;
 
     this._signal.addEventListener('abort', () => {
       this._events.emit('end');
       delete CloudProvider.instances[this.id];
+    });
+
+    process.once('beforeExit', () => {
+      abort.abort(new Error('Process exiting...'));
     });
   }
 

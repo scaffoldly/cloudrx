@@ -55,12 +55,6 @@ export class Memory extends CloudProvider<Record, Record['id']> {
 
   protected _init(): Observable<this> {
     return new Observable<this>((subscriber) => {
-      if (this.signal.aborted) {
-        this.logger.debug?.(`[${this.id}] Init aborted`);
-        subscriber.error(this.options?.signal?.reason);
-        return;
-      }
-
       if (this._initialized) {
         this.logger.debug?.(`[${this.id}] Already initialized`);
         subscriber.next(this);

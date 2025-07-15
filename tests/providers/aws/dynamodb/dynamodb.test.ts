@@ -5,18 +5,14 @@ import { firstValueFrom } from 'rxjs';
 import { _Record, Shard } from '@aws-sdk/client-dynamodb-streams';
 
 describe('aws-dynamodb', () => {
-  const abort = new AbortController();
   let container: DynamoDBLocalContainer;
   let options: DynamoDBOptions;
   type Data = { message: string; timestamp: number };
 
   beforeAll(async () => {
     CloudProvider.DEFAULT_LOGGER = console;
-    CloudProvider.DEFAULT_ABORT = abort;
-
     container = new DynamoDBLocalContainer();
-
-    await container.start(abort.signal);
+    await container.start();
     options = {
       client: container.getClient(),
     };
@@ -27,7 +23,7 @@ describe('aws-dynamodb', () => {
   afterEach(() => {});
 
   afterAll(async () => {
-    abort.abort();
+    CloudProvider.abort('Tests complete');
   });
 
   test('is-a-singleton', async () => {

@@ -19,16 +19,8 @@ export class DynamoDBLocalContainer {
       .withCommand(['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']);
   }
 
-  async start(signal: AbortSignal): Promise<void> {
+  async start(): Promise<void> {
     try {
-      signal.addEventListener('abort', () => {
-        this.stop().catch((err) => {
-          this.logger.error?.(
-            `Failed to stop DynamoDB Local container: ${err}`
-          );
-        });
-      });
-
       this.logger.info?.('Starting DynamoDB Local container...');
       this.startedContainer = await this.container.start();
 

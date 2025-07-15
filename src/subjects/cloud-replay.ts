@@ -20,8 +20,8 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     super();
 
     this.persist = this.inner.pipe(persist(this.provider)).subscribe({
-      error: (err) => super.error(err),
-      complete: () => super.complete(),
+      error: (err) => this.error(err),
+      complete: () => this.complete(),
     });
 
     this.stream = this.provider
@@ -57,11 +57,17 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   }
 
   override error(err: unknown): void {
+    this.persist.unsubscribe();
+    this.stream.unsubscribe();
     this.inner.error(err);
+    super.error(err);
   }
 
   override complete(): void {
+    this.persist.unsubscribe();
+    this.stream.unsubscribe();
     this.inner.complete();
+    super.complete();
   }
 
   override unsubscribe(): void {

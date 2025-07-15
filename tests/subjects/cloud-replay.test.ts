@@ -13,15 +13,12 @@ import { CloudReplaySubject } from 'cloudrx';
 type Data = { message: string; timestamp: number };
 
 describe('cloud-replay', () => {
-  const abort = new AbortController();
-
   beforeAll(() => {
-    CloudProvider.DEFAULT_ABORT = abort;
     CloudProvider.DEFAULT_LOGGER = console;
   });
 
   afterAll(() => {
-    abort.abort();
+    CloudProvider.abort('Tests complete');
   });
 
   const seed = async (
@@ -233,12 +230,12 @@ describe('cloud-replay', () => {
 
     beforeAll(async () => {
       container = new DynamoDBLocalContainer();
-      await container.start(abort.signal);
+      await container.start();
       options.client = container.getClient();
     });
 
     afterAll(async () => {
-      abort.abort();
+      await container.stop();
     });
 
     test('snapshot', async () => {
