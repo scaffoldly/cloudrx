@@ -8,7 +8,13 @@ import {
   timer,
 } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
-import { CloudProvider, Streamed, Matcher, CloudOptions } from '../base';
+import {
+  CloudProvider,
+  Streamed,
+  Matcher,
+  CloudOptions,
+  Expireable,
+} from '../base';
 
 type MemoryDelays = {
   init?: number; // Initialization delay in milliseconds
@@ -143,8 +149,9 @@ export class Memory extends CloudProvider<Record, Record['id']> {
     return of(
       all._buffer.reverse().flatMap((records) =>
         records.map((record) => {
-          const unmarshalled = this._unmarshall<T>(record);
+          const unmarshalled = this._unmarshall(record);
           delete unmarshalled.__marker__;
+          delete unmarshalled.__expires;
           return unmarshalled as T;
         })
       )
@@ -152,7 +159,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
   }
 
   protected _store<T>(
-    item: T,
+    item: Expireable<T>,
     matched?: (event: Record) => void
   ): Observable<(event: Record) => boolean> {
     return new Observable<Matcher<Record>>((subscriber) => {
@@ -205,9 +212,11 @@ export class Memory extends CloudProvider<Record, Record['id']> {
     });
   }
 
-  protected _unmarshall<T>(event: Record): Streamed<T, Record['id']> {
+  protected _unmarshall<T>(
+    event: Record
+  ): Streamed<Expireable<T>, Record['id']> {
     const marker = event.id;
-    const item = JSON.parse(event.data.payload) as T;
+    const item = JSON.parse(event.data.payload) as Expireable<T>;
 
     return {
       ...item,

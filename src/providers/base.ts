@@ -8,6 +8,7 @@ import {
   map,
   Observable,
   observeOn,
+  Observer,
   shareReplay,
   Subscription,
   take,
@@ -21,17 +22,20 @@ export type Streamed<T, TMarker> = T & {
   __marker__?: TMarker;
 };
 
-export interface ICloudProvider<TEvent, TMarker>
-  extends EventEmitter<{ expired: [TEvent] }> {
+export interface ICloudProvider<TEvent, TMarker> {
   get id(): string;
   get signal(): AbortSignal;
   get logger(): Logger;
 
   init(): Observable<this>;
   snapshot<T>(): Observable<T[]>;
-  stream(all?: boolean): Observable<TEvent>;
-  store<T>(item: T): Observable<T>;
-  unmarshall<T>(event: TEvent): Streamed<T, TMarker>;
+  stream(
+    all?: boolean,
+    expired?: (event: TEvent, marker: TMarker) => void
+  ): Observable<TEvent>;
+  expired<T>(): Observable<T>;
+  store<T>(item: Expireable<T>): Observable<T>;
+  unmarshall<T>(event: TEvent): T;
 }
 
 export type CloudOptions = {
@@ -43,13 +47,15 @@ export type Matcher<TEvent> = (
   matched?: (event: TEvent) => void
 ) => boolean;
 
-export class StreamEvent extends EventEmitter<{
+export type Expireable<T> = T & { __expires?: number };
+
+export class StreamEvent<TEvent> extends EventEmitter<{
   start: [];
+  expired: [TEvent];
   end: [];
 }> {}
 
 export abstract class CloudProvider<TEvent, TMarker>
-  extends EventEmitter<{ expired: [TEvent] }>
   implements ICloudProvider<TEvent, TMarker>
 {
   private static aborts: AbortController[] = [];
@@ -60,7 +66,7 @@ export abstract class CloudProvider<TEvent, TMarker>
     Observable<ICloudProvider<unknown, unknown>>
   > = {};
 
-  private _events: StreamEvent = new StreamEvent();
+  private _events: StreamEvent<TEvent> = new StreamEvent();
   private _init$?: Observable<this>;
   private _stream$?: Observable<TEvent[]>;
   private _logger: Logger;
@@ -93,8 +99,6 @@ export abstract class CloudProvider<TEvent, TMarker>
     public readonly id: string,
     opts?: CloudOptions
   ) {
-    super({ captureRejections: true });
-
     this._events.setMaxListeners(100);
 
     this._logger = opts?.logger ?? CloudProvider.DEFAULT_LOGGER;
@@ -125,10 +129,12 @@ export abstract class CloudProvider<TEvent, TMarker>
   protected abstract _snapshot<T>(): Observable<T[]>;
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
   protected abstract _store<T>(
-    item: T,
+    item: Expireable<T>,
     matched?: (event: TEvent) => void
   ): Observable<Matcher<TEvent>>;
-  protected abstract _unmarshall<T>(event: TEvent): Streamed<T, unknown>;
+  protected abstract _unmarshall<T>(
+    event: TEvent
+  ): Streamed<Expireable<T>, unknown>;
 
   public init(): Observable<this> {
     return new Observable<this>((subscriber) => {
@@ -159,11 +165,30 @@ export abstract class CloudProvider<TEvent, TMarker>
 
   public stream(all: boolean = false): Observable<TEvent> {
     return new Observable<TEvent>((subscriber) => {
+      const observer: Observer<TEvent> = {
+        next: (event) => {
+          const unmarshalled = this._unmarshall(event);
+          if (unmarshalled.__expires && Date.now() >= unmarshalled.__expires) {
+            this._events.emit('expired', event);
+            return;
+          }
+          subscriber.next(event);
+        },
+        error: (err) => {
+          this.logger.warn?.(`[${this.id} all=${all}] Stream error:`, err);
+          subscriber.error(err);
+        },
+        complete: () => {
+          this.logger.debug?.(`[${this.id} all=${all}] Stream completed`);
+          subscriber.complete();
+        },
+      };
+
       if (all) {
         // Don't use cached stream, always create a new one
         const subscription = this._stream(true)
           .pipe(concatAll())
-          .subscribe(subscriber);
+          .subscribe(observer);
 
         return () => {
           subscription.unsubscribe();
@@ -201,16 +226,30 @@ export abstract class CloudProvider<TEvent, TMarker>
           }),
           concatAll()
         )
+        .subscribe(observer);
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    });
+  }
+
+  public expired<T>(): Observable<T> {
+    return new Observable<T>((subscriber) => {
+      const subscription = fromEvent(this._events, 'expired')
+        .pipe(
+          map((event) => this._unmarshall<T>(event as TEvent)),
+          filter((item) => !!item.__marker__),
+          map((item) => {
+            delete item.__marker__;
+            delete item.__expires;
+            return item as T;
+          })
+        )
         .subscribe({
-          next: (event) => subscriber.next(event),
-          error: (error) => {
-            this.logger.debug?.(`[${this.id}] Stream error:`, error);
-            subscriber.error(error);
-          },
-          complete: () => {
-            this.logger.debug?.(`[${this.id}] Stream completed`);
-            subscriber.complete();
-          },
+          next: (item) => subscriber.next(item),
+          error: (err) => subscriber.error(err),
+          complete: () => subscriber.complete(),
         });
 
       return () => {
@@ -219,7 +258,7 @@ export abstract class CloudProvider<TEvent, TMarker>
     });
   }
 
-  public store<T>(item: T): Observable<T> {
+  public store<T>(item: Expireable<T>): Observable<T> {
     this.logger.debug?.(`[${this.id}] Starting store operation for:`, item);
 
     return new Observable<T>((subscriber) => {
@@ -276,8 +315,11 @@ export abstract class CloudProvider<TEvent, TMarker>
     });
   }
 
-  public unmarshall<T>(event: TEvent): Streamed<T, TMarker> {
-    return this._unmarshall(event) as Streamed<T, TMarker>;
+  public unmarshall<T>(event: TEvent): T {
+    const unmarshalled = this._unmarshall<T>(event);
+    delete unmarshalled.__marker__;
+    delete unmarshalled.__expires;
+    return unmarshalled;
   }
 }
 

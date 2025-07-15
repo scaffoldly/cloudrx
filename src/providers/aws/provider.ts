@@ -14,6 +14,7 @@ import {
   Matcher,
   FatalError,
   RetryError,
+  Expireable,
 } from '../base';
 import {
   asyncScheduler,
@@ -635,7 +636,7 @@ export class DynamoDBImpl<
   }
 
   protected _store<T>(
-    item: T,
+    item: Expireable<T>,
     matched?: (event: _Record) => void
   ): Observable<Matcher<_Record>> {
     return new Observable<Matcher<_Record>>((subscriber) => {
@@ -648,8 +649,11 @@ export class DynamoDBImpl<
         [this.hashKey]: hashKeyValue,
         [this.rangeKey]: rangeKeyValue,
         data: item,
-        // expires: Math.floor(Date.now() / 1000) + 3600, // Expire in 1 hour
       };
+
+      if (item.__expires) {
+        record.expires = item.__expires;
+      }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
         const dynamoRecord = event.dynamodb;
@@ -696,7 +700,10 @@ export class DynamoDBImpl<
 
   protected _unmarshall<T>(
     event: _Record
-  ): Streamed<T, NonNullable<_Record['dynamodb']>['SequenceNumber']> {
+  ): Streamed<
+    Expireable<T>,
+    NonNullable<_Record['dynamodb']>['SequenceNumber']
+  > {
     const marker = event.dynamodb?.SequenceNumber;
     if (!marker) {
       throw new FatalError('Invalid DynamoDB record: missing SequenceNumber');
@@ -707,7 +714,7 @@ export class DynamoDBImpl<
         'Invalid DynamoDB record: missing NewImage or OldImage'
       );
     }
-    const storedData = unmarshall(image) as DynamoDBStoredData<T>;
+    const storedData = unmarshall(image) as DynamoDBStoredData<Expireable<T>>;
     return {
       ...storedData.data,
       __marker__: marker,

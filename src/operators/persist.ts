@@ -7,7 +7,7 @@ import {
   of,
   switchMap,
 } from 'rxjs';
-import { ICloudProvider } from '../providers';
+import { Expireable, ICloudProvider } from '../providers';
 
 export const persist = <T>(
   provider?: Observable<ICloudProvider<unknown, unknown>>
@@ -25,7 +25,7 @@ export const persist = <T>(
         if (!state.provider) {
           return of(value).pipe(delay(1000));
         }
-        return state.provider.store(value);
+        return state.provider.store(value as Expireable<T>);
       };
 
       const checkCompletion = (): void => {
@@ -124,13 +124,7 @@ export const persistReplay = <T>(
       const replaySub = provider
         ?.pipe(
           switchMap((p) =>
-            p.stream(true).pipe(
-              map((event) => {
-                const unmarshalled = p.unmarshall<T>(event);
-                delete unmarshalled.__marker__;
-                return unmarshalled as T;
-              })
-            )
+            p.stream(true).pipe(map((event) => p.unmarshall<T>(event)))
           )
         )
         .subscribe(subscriber);

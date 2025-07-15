@@ -1,5 +1,6 @@
+import { EventEmitter } from 'stream';
 import { persist } from '../operators';
-import { ICloudProvider } from '../providers';
+import { Expireable, ICloudProvider } from '../providers';
 import {
   first,
   map,
@@ -12,9 +13,11 @@ import {
 
 export class CloudReplaySubject<T> extends ReplaySubject<T> {
   private inner = new Subject<T>();
+  private emitter = new EventEmitter<{ expired: [T] }>();
 
   private persist: Subscription;
   private stream: Subscription;
+  private expired: Subscription;
 
   constructor(private provider: Observable<ICloudProvider<unknown, unknown>>) {
     super();
@@ -29,19 +32,26 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
         first(),
         switchMap((provider) =>
           // TODO make 'all' configurable
-          provider.stream(true).pipe(
-            map((event) => {
-              const unmarshalled = provider.unmarshall<T>(event);
-              delete unmarshalled.__marker__;
-              return unmarshalled as T;
-            })
-          )
+          provider
+            .stream(true)
+            .pipe(map((event) => provider.unmarshall<T>(event)))
         )
       )
       .subscribe({
         next: (value) => super.next(value),
         error: (err) => this.error(err),
         complete: () => this.complete(),
+      });
+
+    this.expired = this.provider
+      .pipe(
+        first(),
+        switchMap((provider) => provider.expired<T>())
+      )
+      .subscribe({
+        next: (value) => this.emitter.emit('expired', value),
+        error: (err) => this.error(err),
+        complete: () => {},
       });
   }
 
@@ -52,13 +62,15 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     );
   }
 
-  override next(value: T): void {
+  override next(value: T | Expireable<T>): void {
     this.inner.next(value);
   }
 
   override error(err: unknown): void {
     this.persist.unsubscribe();
     this.stream.unsubscribe();
+    this.expired.unsubscribe();
+    this.removeAllListeners('expired');
     this.inner.error(err);
     super.error(err);
   }
@@ -66,6 +78,8 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   override complete(): void {
     this.persist.unsubscribe();
     this.stream.unsubscribe();
+    this.expired.unsubscribe();
+    this.removeAllListeners('expired');
     this.inner.complete();
     super.complete();
   }
@@ -73,7 +87,24 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   override unsubscribe(): void {
     this.persist.unsubscribe();
     this.stream.unsubscribe();
+    this.expired.unsubscribe();
+    this.removeAllListeners('expired');
     this.inner.unsubscribe();
     super.unsubscribe();
+  }
+
+  on(event: 'expired', listener: (value: T) => void): this {
+    this.emitter.on(event, listener as (...args: [T]) => void);
+    return this;
+  }
+
+  off(event: 'expired', listener: (value: T) => void): this {
+    this.emitter.off(event, listener as (...args: [T]) => void);
+    return this;
+  }
+
+  removeAllListeners(event: 'expired'): this {
+    this.emitter.removeAllListeners(event);
+    return this;
   }
 }
