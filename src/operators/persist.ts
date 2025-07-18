@@ -10,7 +10,7 @@ import {
 import { Expireable, ICloudProvider } from '../providers';
 
 export const persist = <T>(
-  provider?: Observable<ICloudProvider<unknown, unknown>>
+  provider?: Observable<ICloudProvider<unknown>>
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
     return new Observable<T>((subscriber) => {
@@ -18,7 +18,7 @@ export const persist = <T>(
         buffer: [] as T[],
         ready: false,
         complete: false,
-        provider: undefined as ICloudProvider<unknown, unknown> | undefined,
+        provider: undefined as ICloudProvider<unknown> | undefined,
       };
 
       const storeValue = (value: T): Observable<T> => {
@@ -66,7 +66,7 @@ export const persist = <T>(
       };
 
       const handleProviderReady = (
-        provider: ICloudProvider<unknown, unknown> | undefined
+        provider: ICloudProvider<unknown> | undefined
       ): void => {
         state.provider = provider;
         state.ready = true;
@@ -115,7 +115,7 @@ export const persist = <T>(
 };
 
 export const persistReplay = <T>(
-  provider?: Observable<ICloudProvider<unknown, unknown>>
+  provider?: Observable<ICloudProvider<unknown>>
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
     return new Observable<T>((subscriber) => {

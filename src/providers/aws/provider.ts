@@ -71,9 +71,8 @@ export type DynamoDBOptions<
 export type DynamoDBStreamedData<T> = Streamed<T, string>;
 
 export type DynamoDBStoredData<T> = {
-  [x: string]: string | number | T;
+  [x: string]: string | number | T | undefined;
   data: T;
-  expires?: number;
 };
 
 export class DynamoDBImpl<
@@ -83,6 +82,7 @@ export class DynamoDBImpl<
   _Record,
   NonNullable<_Record['dynamodb']>['SequenceNumber']
 > {
+  private static DEFAULT_CLIENT = new DynamoDBClient({});
   private static shards: Record<string, Observable<Shard>> = {};
 
   private _client: DynamoDBClient;
@@ -107,7 +107,7 @@ export class DynamoDBImpl<
 
   constructor(id: string, opts?: DynamoDBOptions<THashKey, TRangeKey>) {
     super(id, opts);
-    this._client = opts?.client || new DynamoDBClient();
+    this._client = opts?.client || DynamoDBImpl.DEFAULT_CLIENT;
     this._hashKey = opts?.hashKey || ('hashKey' as THashKey);
     this._rangeKey = opts?.rangeKey || ('rangeKey' as TRangeKey);
     this._ttlAttribute = opts?.ttlAttribute || 'expires';
@@ -540,6 +540,11 @@ export class DynamoDBImpl<
                   (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
                 )
               );
+
+              Records.filter((r) => r.eventName === 'REMOVE').forEach((r) =>
+                this.events.expire(r.dynamodb?.SequenceNumber, r)
+              );
+
               if (NextShardIterator) {
                 subscriptions.push(
                   asyncScheduler.schedule(
@@ -652,7 +657,7 @@ export class DynamoDBImpl<
       };
 
       if (item.__expires) {
-        record.expires = item.__expires;
+        record[this.ttlAttribute] = item.__expires;
       }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
@@ -715,14 +720,24 @@ export class DynamoDBImpl<
       );
     }
     const storedData = unmarshall(image) as DynamoDBStoredData<Expireable<T>>;
-    return {
+    const result = {
       ...storedData.data,
       __marker__: marker,
     };
+
+    // Copy TTL attribute back to __expires
+    const ttlValue = storedData[this.ttlAttribute];
+    if (typeof ttlValue === 'number') {
+      result.__expires = ttlValue;
+    }
+
+    return result;
   }
 }
 
 type DynamoDBConstructor = {
+  DEFAULT_CLIENT: DynamoDBClient;
+
   new <
     THashKey extends string = 'hashKey',
     TRangeKey extends string = 'rangeKey',

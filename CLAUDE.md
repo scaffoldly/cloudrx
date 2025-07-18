@@ -56,8 +56,17 @@ subject.subscribe(event => {
   console.log('Received event:', event);
 });
 
+// Subscribe to expired events
+subject.on('expired', (expiredEvent) => {
+  console.log('Event expired:', expiredEvent);
+});
+
 // Emit values that are automatically persisted
 subject.next({ type: 'user-action', data: { userId: 123 } });
+
+// Emit values with expiration (TTL)
+const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
+subject.next({ type: 'temporary-session', sessionId: 'abc123' }, expiresAt);
 ```
 
 ## Key Architecture Components
@@ -78,29 +87,34 @@ The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically p
 **Core Architecture**:
 ```typescript
 export class CloudReplaySubject<T> extends ReplaySubject<T> {
-  private inner = new Subject<T>();
+  private inner = new Subject<Expireable<T>>();
+  private emitter = new EventEmitter<{ expired: [T] }>();
   private persist: Subscription;
   private stream: Subscription;
+  private expired: Subscription;
 }
 ```
 
 **Key Features**:
-- **Dual Subscription Model**: Separate subscriptions for persistence (via `persist` operator) and stream replay
+- **Triple Subscription Model**: Separate subscriptions for persistence, stream replay, and expired events
 - **Automatic Backfill**: Late subscribers receive all previously persisted data via ReplaySubject behavior
+- **TTL Support**: Items can be emitted with optional expiration times using the `expires` parameter
+- **Expired Event Handling**: Emits 'expired' events when items reach their TTL
 - **Provider Integration**: Works with any CloudProvider (DynamoDB, Memory, etc.)
 - **Stream Processing**: Uses `provider.stream(true)` to get full historical replay from provider
 
 **Persistence Flow**:
-1. **Inner Subject**: User emissions go to internal Subject
+1. **Inner Subject**: User emissions go to internal Subject<Expireable<T>>
 2. **Persist Operator**: Internal Subject piped through `persist(provider)` for storage
 3. **Stream Subscription**: Provider's `stream(true)` provides backfill and live updates
-4. **ReplaySubject Emission**: All data (backfilled and live) emitted to ReplaySubject subscribers
+4. **Expired Subscription**: Provider's `expired()` stream emits expired events
+5. **ReplaySubject Emission**: All data (backfilled and live) emitted to ReplaySubject subscribers
 
-**Backfill Mechanism**:
-- Provider's `stream(true)` calls `_stream(true).pipe(concatAll())` 
-- ReplaySubject buffer from provider flattened into individual records
-- Records unmarshalled and `__marker__` removed before emission
-- Late subscribers get complete history due to ReplaySubject inheritance
+**TTL and Expiration**:
+- Items can be emitted with optional expiration using `subject.next(value, expiresDate)`
+- The `expires` Date parameter is converted to Unix timestamp in seconds
+- Only the "all" stream checks for expired items and emits expired events
+- Expired events are emitted via EventEmitter pattern: `subject.on('expired', callback)`
 
 **Usage Patterns**:
 ```typescript
@@ -110,8 +124,15 @@ const subject = new CloudReplaySubject(provider$);
 // Subscribe before or after seeding - both get full history
 subject.subscribe(item => console.log('Historical + Live:', item));
 
+// Listen for expired events
+subject.on('expired', item => console.log('Expired:', item));
+
 // Emit new data that gets persisted and replayed
 subject.next({ message: 'new data' });
+
+// Emit data with expiration
+const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+subject.next({ message: 'temporary data' }, expiresAt);
 ```
 
 **Critical Timing Fix (2025-07-08)**:

@@ -23,8 +23,7 @@ npm install cloudrx@beta
 
 ## Usage
 
-> [!NOTE]
-> **Coming Soon**: `CloudAsyncSubject` and `CloudBehaviorSubject` are planned for future releases to provide cloud-backed versions of all RxJS subject types.
+> [!NOTE] > **Coming Soon**: `CloudAsyncSubject` and `CloudBehaviorSubject` are planned for future releases to provide cloud-backed versions of all RxJS subject types.
 
 ### `CloudReplaySubject<T>` (`extends ReplaySubject<T>`)
 
@@ -32,50 +31,90 @@ CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically persi
 
 #### DynamoDB
 
+##### Imports
+
 ```typescript
 import { CloudReplaySubject, DynamoDB } from 'cloudrx';
+import { filter } from 'rxjs';
+```
+
+##### Example Usage
+
+```typescript
+type UserEvent = {
+  action: 'login' | 'clicked' | 'purchase' | 'purchased';
+  userId: number;
+  productId?: number;
+  transactionId?: number;
+};
 
 // Create cloud-backed replay subjects using the same DynamoDB table
-const subject0 = new CloudReplaySubject(DynamoDB.from('events'));
-const subject1 = new CloudReplaySubject(DynamoDB.from('events'));
-const subject2 = new CloudReplaySubject(DynamoDB.from('events'));
+// - These can be on different machines, different processes, etc.
+const auth = new CloudReplaySubject<UserEvent>(DynamoDB.from('my-site'));
+const cart = new CloudReplaySubject<UserEvent>(DynamoDB.from('my-site'));
+const user = new CloudReplaySubject<UserEvent>(DynamoDB.from('my-site'));
 
-// Emit a 'login' event to subject0
-subject0.next({
-  type: 'user-action',
-  data: { userId: 123, action: 'login' },
+// Emit a 'login' event, which will broadcast to all subjects
+auth.next(
+  {
+    action: 'login',
+    userId: 123,
+  },
+  new Date(Date.now() + 5000) // Emit an 'expire' event in 5 seconds
+);
+
+// Emit a 'pruchase' event, which will broadcast to all subjects
+cart.next({
+  action: 'purchase',
+  userId: 123,
+  productId: 456,
 });
 
-// Emit a 'purchase' event to subject1
-subject1.next({
-  type: 'user-action',
-  data: { userId: 123, action: 'purchase' },
+// Emit a 'purchased' event, which will broadcast to all subjects
+user.next({
+  action: 'purchased',
+  userId: 123,
+  transactionId: 789,
 });
 
-// Emit a 'purchase' event to subject1
-subject2.next({
-  type: 'user-action',
-  data: { userId: 123, action: 'processing' },
+// All subjects receive all events
+auth
+  // Only listen for 'login' events
+  .pipe(filter((event) => event.action === 'login'))
+  .subscribe((event) => {
+    console.log('Auth received:', event);
+  });
+
+cart.subscribe((event) => {
+  console.log('Cart received:', event);
 });
 
-// Both subjects automatically recieve both events
-subject1.subscribe((event) => {
-  console.log('Subject1 received:', event);
+user.subscribe((event) => {
+  console.log('User received:', event);
 });
 
-subject2.subscribe((event) => {
-  console.log('Subject2 received:', event);
+// (Optional) Listen for expired events for additional handling for each subject
+user.on('expired', (event) => {
+  if (event.action === 'login') {
+    console.log('User received expired login event:', event);
+  }
 });
 
-// Output for subject1:
-// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'login' } }
-// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'purchase' } }
-// Subject1 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
+// Auth Output:
+// - Note: Only 'login' events because of the filter
+// Auth received: { action: 'login', userId: 123 }
 
-// Output for subject2:
-// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'login' } }
-// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'purchase' } }
-// Subject2 received: { type: 'user-action', data: { userId: 123, action: 'processing' } }
+// Cart Output:
+// Cart received: { action: 'login', userId: 123 }
+// Cart received: { action: 'purchase', userId: 123, productId: 456 }
+// Cart received: { action: 'purchased', userId: 123, transactionId: 789 }
+
+// User Output:
+// User received: { action: 'login', userId: 123 }
+// User received: { action: 'purchase', userId: 123, productId: 456 }
+// User received: { action: 'purchased', userId: 123, transactionId: 789 }
+// ... 5 seconds later:
+// User session received expired login event: { action: 'login', userId: 123 }
 ```
 
 ##### DynamoDBOptions
@@ -127,6 +166,7 @@ Tables are automatically named with the pattern `cloudrx-{id}` where `{id}` is t
 - 🌩️ **DynamoDB Streams Integration** - Real-time streaming from DynamoDB with automatic persistence
 - 🔄 **RxJS Operators** - `persist` and `persistReplay` operators for seamless integration
 - 📡 **CloudReplaySubject** - Cloud-backed ReplaySubject with automatic persistence and replay
+- ⏰ **TTL Support** - Time To Live functionality with automatic expiration and expired event handling
 - 🎯 **Event Replay** - Automatic replay of persisted events on subscription using DynamoDB Streams
 - 🚀 **Reactive Persistence** - Store and retrieve data reactively with Observable patterns
 - 📦 **TypeScript First** - Full type safety and IntelliSense support
@@ -157,8 +197,36 @@ The CloudReplaySubject is a cloud-backed RxJS ReplaySubject that automatically p
 - **Automatic Persistence** - All emitted values are automatically stored to the cloud provider
 - **Historical Replay** - Late subscribers receive all previously persisted data
 - **Cross-Instance Sharing** - Multiple CloudReplaySubjects using the same provider (e.g., `DynamoDB.from('events')`) automatically share all historical events
+- **TTL Support** - Items can be emitted with optional expiration times using `next(value, expiresDate)`
+- **Expired Event Handling** - Listen for expired events using `subject.on('expired', callback)`
 - **Provider Integration** - Works with any CloudProvider (DynamoDB, Memory, etc.)
 - **ReplaySubject Behavior** - Maintains standard RxJS ReplaySubject semantics
+
+**TTL and Expiration:**
+
+CloudReplaySubject supports Time To Live (TTL) functionality for automatic data expiration:
+
+```typescript
+const subject = new CloudReplaySubject(DynamoDB.from('events'));
+
+// Listen for expired events
+subject.on('expired', (expiredData) => {
+  console.log('Data expired:', expiredData);
+});
+
+// Emit data with expiration
+const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+subject.next({ message: 'This will expire in 1 hour' }, expiresAt);
+
+// Emit data without expiration (persists indefinitely)
+subject.next({ message: 'This persists forever' });
+```
+
+**Event Listener Methods:**
+
+- `subject.on('expired', callback)` - Listen for expired events
+- `subject.off('expired', callback)` - Remove expired event listener
+- `subject.removeAllListeners('expired')` - Remove all expired event listeners
 
 ## Development
 

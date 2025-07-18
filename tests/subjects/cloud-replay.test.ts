@@ -1,4 +1,10 @@
-import { firstValueFrom, lastValueFrom, Observable, ReplaySubject } from 'rxjs';
+import {
+  filter,
+  firstValueFrom,
+  lastValueFrom,
+  Observable,
+  ReplaySubject,
+} from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 import {
   CloudProvider,
@@ -22,7 +28,7 @@ describe('cloud-replay', () => {
   });
 
   const seed = async (
-    provider$: Observable<ICloudProvider<unknown, unknown>>
+    provider$: Observable<ICloudProvider<unknown>>
   ): Promise<Data[]> => {
     const provider = await firstValueFrom(provider$);
 
@@ -121,73 +127,8 @@ describe('cloud-replay', () => {
     );
   };
 
-  const readmeUsage = async (
-    provider: Observable<ICloudProvider<unknown, unknown>>
-  ): Promise<void> => {
-    // Create cloud-backed replay subjects using the same provider
-    const subject0 = new CloudReplaySubject(provider);
-    const subject1 = new CloudReplaySubject(provider);
-    const subject2 = new CloudReplaySubject(provider);
-
-    // Emit a 'login' event to subject0
-    subject0.next({
-      type: 'user-action',
-      data: { userId: 123, action: 'login' },
-    });
-
-    // Emit a 'purchase' event to subject1
-    subject1.next({
-      type: 'user-action',
-      data: { userId: 123, action: 'purchase' },
-    });
-
-    // Emit a 'processing' event to subject2
-    subject2.next({
-      type: 'user-action',
-      data: { userId: 123, action: 'processing' },
-    });
-
-    // Both subjects automatically receive all events
-    const events1 = await new Promise<unknown[]>((resolve) => {
-      const received: unknown[] = [];
-      subject1.subscribe((event) => {
-        received.push(event);
-      });
-
-      setTimeout(() => {
-        resolve(received);
-      }, 5000);
-    });
-
-    const events2 = await new Promise<unknown[]>((resolve) => {
-      const received: unknown[] = [];
-      subject2.subscribe((event) => {
-        received.push(event);
-      });
-
-      setTimeout(() => {
-        resolve(received);
-      }, 5000);
-    });
-
-    // Verify both subjects received all events
-    expect(events1).toHaveLength(3);
-    expect(events2).toHaveLength(3);
-
-    const expectedEvents = [
-      { type: 'user-action', data: { userId: 123, action: 'login' } },
-      { type: 'user-action', data: { userId: 123, action: 'purchase' } },
-      { type: 'user-action', data: { userId: 123, action: 'processing' } },
-    ];
-
-    expectedEvents.forEach((event) => {
-      expect(events1).toContainEqual(event);
-      expect(events2).toContainEqual(event);
-    });
-  };
-
   const expired = async (
-    provider: Observable<ICloudProvider<unknown, unknown>>
+    provider: Observable<ICloudProvider<unknown>>
   ): Promise<void> => {
     const subject = new CloudReplaySubject<Data>(provider);
 
@@ -252,10 +193,6 @@ describe('cloud-replay', () => {
       await shadowed(seedData, subjects);
     });
 
-    test('readme-usage', async () => {
-      await readmeUsage(Memory.from(testId()));
-    });
-
     test('expired', async () => {
       await expired(Memory.from(testId()));
     });
@@ -307,12 +244,143 @@ describe('cloud-replay', () => {
       await shadowed(seedData, subjects);
     });
 
-    test('readme-usage', async () => {
-      await readmeUsage(DynamoDB.from(testId(), options));
-    });
-
     test('expired', async () => {
       await expired(DynamoDB.from(testId(), options));
+    });
+  });
+
+  describe('readme', () => {
+    describe('ddb', () => {
+      let container: DynamoDBLocalContainer;
+      beforeAll(async () => {
+        container = new DynamoDBLocalContainer();
+        await container.start();
+      });
+      afterAll(async () => {
+        await container.stop();
+      });
+
+      // Verify readme examples
+      test('cloud-replay', async () => {
+        // Capture log events
+        const logEvents: string[] = [];
+        const console = {
+          log(...args: unknown[]): void {
+            logEvents.push(
+              args
+                .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+                .join(' ')
+            );
+          },
+        };
+
+        DynamoDB.DEFAULT_CLIENT = container.getClient();
+
+        // ### BEGIN COPY PASTE FROM README ###
+        type UserEvent = {
+          action: 'login' | 'clicked' | 'purchase' | 'purchased';
+          userId: number;
+          productId?: number;
+          transactionId?: number;
+        };
+
+        // Create cloud-backed replay subjects using the same DynamoDB table
+        // - These can be on different machines, different processes, etc.
+        const auth = new CloudReplaySubject<UserEvent>(
+          DynamoDB.from('my-site')
+        );
+        const cart = new CloudReplaySubject<UserEvent>(
+          DynamoDB.from('my-site')
+        );
+        const user = new CloudReplaySubject<UserEvent>(
+          DynamoDB.from('my-site')
+        );
+
+        // Emit a 'login' event, which will broadcast to all subjects
+        auth.next(
+          {
+            action: 'login',
+            userId: 123,
+          },
+          new Date(Date.now() + 5000) // Emit an 'expire' event in 5 seconds
+        );
+
+        // Emit a 'pruchase' event, which will broadcast to all subjects
+        cart.next({
+          action: 'purchase',
+          userId: 123,
+          productId: 456,
+        });
+
+        // Emit a 'purchased' event, which will broadcast to all subjects
+        user.next({
+          action: 'purchased',
+          userId: 123,
+          transactionId: 789,
+        });
+
+        // All subjects receive all events
+        auth
+          // Only listen for 'login' events
+          .pipe(filter((event) => event.action === 'login'))
+          .subscribe((event) => {
+            console.log('Auth received:', event);
+          });
+
+        cart.subscribe((event) => {
+          console.log('Cart received:', event);
+        });
+
+        user.subscribe((event) => {
+          console.log('User received:', event);
+        });
+
+        // (Optional) Listen for expired events for additional handling for each subject
+        user.on('expired', (event) => {
+          if (event.action === 'login') {
+            console.log('User received expired login event:', event);
+          }
+        });
+
+        // Auth Output:
+        // - Note: Only 'login' events because of the filter
+        // Auth received: { action: 'login', userId: 123 }
+
+        // Cart Output:
+        // Cart received: { action: 'login', userId: 123 }
+        // Cart received: { action: 'purchase', userId: 123, productId: 456 }
+        // Cart received: { action: 'purchased', userId: 123, transactionId: 789 }
+
+        // User Output:
+        // User received: { action: 'login', userId: 123 }
+        // User received: { action: 'purchase', userId: 123, productId: 456 }
+        // User received: { action: 'purchased', userId: 123, transactionId: 789 }
+        // ... 5 seconds later:
+        // User session received expired login event: { action: 'login', userId: 123 }
+        // ### END COPY PASTE FROM README ###
+
+        await new Promise<void>((resolve) =>
+          setTimeout(() => resolve(), 10000)
+        );
+
+        const expectedLogs = [
+          'Auth received: {"action":"login","userId":123}',
+
+          'Cart received: {"action":"login","userId":123}',
+          'Cart received: {"productId":456,"action":"purchase","userId":123}',
+          'Cart received: {"action":"purchased","userId":123,"transactionId":789}',
+
+          'User received: {"action":"login","userId":123}',
+          'User received: {"productId":456,"action":"purchase","userId":123}',
+          'User received: {"action":"purchased","userId":123,"transactionId":789}',
+
+          'User received expired login event: {"action":"login","userId":123}',
+        ];
+
+        expectedLogs.forEach((log) => {
+          expect(logEvents).toContain(log);
+        });
+      });
     });
   });
 });

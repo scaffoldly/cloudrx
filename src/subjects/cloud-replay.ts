@@ -1,116 +1,129 @@
 import { EventEmitter } from 'stream';
 import { persist } from '../operators';
-import { Expireable, ICloudProvider } from '../providers';
+import { CloudProvider, Expireable, ICloudProvider } from '../providers';
 import {
   first,
+  ignoreElements,
   map,
+  merge,
   Observable,
+  of,
   ReplaySubject,
-  Subject,
   Subscription,
   switchMap,
+  tap,
 } from 'rxjs';
 
+export type SubjectEventType = 'expired';
+
 export class CloudReplaySubject<T> extends ReplaySubject<T> {
-  private inner = new Subject<Expireable<T>>();
-  private emitter = new EventEmitter<{ expired: [T] }>();
+  private buffer = new ReplaySubject<Expireable<T>>();
+  private emitter = new EventEmitter<{ [K in SubjectEventType]: [T] }>();
+  private subscription: Subscription;
 
-  private persist: Subscription;
-  private stream: Subscription;
-  private expired: Subscription;
-
-  constructor(private provider: Observable<ICloudProvider<unknown, unknown>>) {
+  constructor(private provider$: Observable<ICloudProvider<unknown>>) {
     super();
 
-    this.persist = this.inner.pipe(persist(this.provider)).subscribe({
-      error: (err) => this.error(err),
-      complete: () => this.complete(),
-    });
-
-    this.stream = this.provider
+    this.subscription = provider$
       .pipe(
         first(),
-        switchMap((provider) =>
-          // TODO make 'all' configurable
-          provider
+        switchMap((provider) => {
+          const persisted = this.buffer.pipe(persist(of(provider)));
+          const streamed = provider
             .stream(true)
-            .pipe(map((event) => provider.unmarshall<T>(event)))
-        )
+            .pipe(map((event) => provider.unmarshall<T>(event)));
+          const expired = provider
+            .expired()
+            .pipe(map((event) => provider.unmarshall<T>(event)));
+
+          return merge(
+            persisted.pipe(
+              tap(() => {}),
+              ignoreElements()
+            ),
+            streamed.pipe(tap((event) => super.next(event))),
+            expired.pipe(
+              tap((event) => this.emitter.emit('expired', event)),
+              ignoreElements()
+            )
+          );
+        })
       )
       .subscribe({
-        next: (value) => super.next(value),
         error: (err) => this.error(err),
         complete: () => this.complete(),
-      });
-
-    this.expired = this.provider
-      .pipe(
-        first(),
-        switchMap((provider) => provider.expired<T>())
-      )
-      .subscribe({
-        next: (value) => this.emitter.emit('expired', value),
-        error: (err) => this.error(err),
-        complete: () => {},
       });
   }
 
   public snapshot(): Observable<T[]> {
-    return this.provider.pipe(
+    return this.provider$.pipe(
       first(),
       switchMap((provider) => provider.snapshot<T>())
     );
   }
 
-  override next(value: T, expires?: Date): void {
-    if (!expires) {
-      return this.inner.next(value as Expireable<T>);
+  override next(
+    value: T,
+    timing?: Date | { expireAt?: Date; emitAt?: Date } // TODO: implement emitAt
+  ): void {
+    if (!timing) {
+      return this.buffer.next(value as Expireable<T>);
     }
 
-    this.inner.next({
-      ...value,
-      __expires: Math.floor(expires.getTime() / 1000),
-    });
+    if (timing instanceof Date) {
+      timing = { expireAt: timing };
+    }
+
+    if (timing.expireAt && !timing.emitAt) {
+      return this.buffer.next({
+        ...value,
+        __expires: CloudProvider.TIME(timing.expireAt),
+      });
+    }
+
+    if (!timing.expireAt && timing.emitAt) {
+      throw new Error('emitAt not implemented');
+    }
+
+    if (timing.expireAt && timing.emitAt) {
+      throw new Error('expireAt + emitAt not implemented');
+    }
   }
 
   override error(err: unknown): void {
-    this.persist.unsubscribe();
-    this.stream.unsubscribe();
-    this.expired.unsubscribe();
-    this.removeAllListeners('expired');
-    this.inner.error(err);
+    this._unsubscribe();
+    this.buffer.error(err);
     super.error(err);
   }
 
   override complete(): void {
-    this.persist.unsubscribe();
-    this.stream.unsubscribe();
-    this.expired.unsubscribe();
-    this.removeAllListeners('expired');
-    this.inner.complete();
+    this._unsubscribe();
+    this.buffer.complete();
     super.complete();
   }
 
   override unsubscribe(): void {
-    this.persist.unsubscribe();
-    this.stream.unsubscribe();
-    this.expired.unsubscribe();
-    this.removeAllListeners('expired');
-    this.inner.unsubscribe();
+    this._unsubscribe();
+    this.buffer.unsubscribe();
     super.unsubscribe();
   }
 
-  on(event: 'expired', listener: (value: T) => void): this {
-    this.emitter.on(event, listener as (...args: [T]) => void);
+  private _unsubscribe(): void {
+    this.subscription.unsubscribe();
+    this.emitter.removeAllListeners();
+  }
+
+  on(type: SubjectEventType, listener: (value: T) => void): this {
+    this.emitter.on(type, listener);
     return this;
   }
 
-  off(event: 'expired', listener: (value: T) => void): this {
-    this.emitter.off(event, listener as (...args: [T]) => void);
+  off(type: SubjectEventType, listener: (value: T) => void): this {
+    this.emitter.off(type, listener);
     return this;
   }
 
-  removeAllListeners(event: 'expired'): this {
+  removeAllListeners(event: SubjectEventType): this {
     this.emitter.removeAllListeners(event);
     return this;
   }
