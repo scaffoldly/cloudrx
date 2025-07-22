@@ -64,10 +64,18 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
 
   override next(
     value: T,
-    timing?: Date | { expireAt?: Date; emitAt?: Date } // TODO: implement emitAt
+    timing?: Date | number | { emitAt?: Date; expireAt?: Date } // TODO: implement emitAt
   ): void {
     if (!timing) {
       return this.buffer.next(value as Expireable<T>);
+    }
+
+    if (typeof timing === 'number') {
+      timing = new Date(timing);
+      if (timing.getUTCFullYear() === 1970) {
+        // convert to milliseconds: second-based granularity resolves to 1970
+        timing = new Date(timing.getTime() * 1000);
+      }
     }
 
     if (timing instanceof Date) {
@@ -88,6 +96,8 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     if (timing.expireAt && timing.emitAt) {
       throw new Error('expireAt + emitAt not implemented');
     }
+
+    throw new Error('Invalid timing provided');
   }
 
   override error(err: unknown): void {

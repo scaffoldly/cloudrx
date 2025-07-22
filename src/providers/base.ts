@@ -71,6 +71,9 @@ export class StreamEvent<TEvent, TMarker> extends EventEmitter<
     this.expirations.set(
       marker,
       asyncScheduler.schedule(() => {
+        // TODO: Instead of emitting expired:
+        // - Implement remove functionality
+        // - Wait for removal event from stream
         this.emit('expired', event);
         this.expirations.delete(marker);
       }, delaySec * 1000)
