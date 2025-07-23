@@ -30,6 +30,7 @@ import {
   fromEvent,
   map,
   Observable,
+  observeOn,
   of,
   scan,
   shareReplay,
@@ -528,6 +529,7 @@ export class DynamoDBImpl<
       subscriptions.push(
         iterator
           .pipe(
+            observeOn(asyncScheduler),
             takeUntil(
               fromEvent(this.signal, 'abort').pipe(
                 tap(() =>
@@ -577,11 +579,11 @@ export class DynamoDBImpl<
                 );
               }
             },
-            error: (_error) => {
-              // this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
+            error: (error) => {
+              this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
             },
             complete: () => {
-              // this.logger.debug?.(`[${this.id}] Stream iterator completed`);
+              this.logger.debug?.(`[${this.id}] Stream iterator completed`);
               subscriber.next([]);
               subscriber.complete();
             },
