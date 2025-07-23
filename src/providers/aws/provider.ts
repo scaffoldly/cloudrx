@@ -491,7 +491,10 @@ export class DynamoDBImpl<
         `[${this.id}] Starting _stream with ${shardIteratorType}, streamArn: ${this.streamArn}`
       );
 
-      const iterator = new Subject<string>();
+      const iterator = new Subject<{
+        iterator: string | undefined;
+        shardId: string | undefined;
+      }>();
       const subscriptions: Subscription[] = [];
 
       subscriptions.push(
@@ -509,13 +512,18 @@ export class DynamoDBImpl<
                     ShardIteratorType: shardIteratorType,
                   })
                 )
+              ).pipe(
+                map(({ ShardIterator }) => ({
+                  ShardIterator,
+                  ShardId: shard.ShardId,
+                }))
               )
             )
           )
           .subscribe({
-            next: ({ ShardIterator }) => {
+            next: ({ ShardIterator, ShardId }) => {
               if (ShardIterator) {
-                iterator.next(ShardIterator);
+                iterator.next({ iterator: ShardIterator, shardId: ShardId });
               }
             },
             error: (error) => {
@@ -527,35 +535,39 @@ export class DynamoDBImpl<
           })
       );
 
+      let lastShardIterator: string | undefined = undefined;
+      let lastSequenceNumber: string | undefined = undefined;
+      let lastShardId: string | undefined = undefined;
+
       subscriptions.push(
         iterator
           .pipe(
             observeOn(asyncScheduler),
             distinct(),
-            takeUntil(
-              fromEvent(this.signal, 'abort').pipe(
-                tap(() =>
-                  this.logger.debug?.(
-                    `[${this.id}] Abort signal received, stopping stream`
-                  )
-                )
-              )
-            ),
+            takeUntil(fromEvent(this.signal, 'abort')),
             tap((position) => {
               this.logger.debug?.(
                 `[${this.id}] Fetching records with ShardIterator: ${position}`
               );
+              lastShardIterator = position.iterator;
+              lastShardId = position.shardId;
             }),
-            concatMap((position) =>
+            concatMap(({ iterator, shardId }) =>
               from(
                 this.streamClient.send(
-                  new GetRecordsCommand({ ShardIterator: position })
+                  new GetRecordsCommand({ ShardIterator: iterator })
                 )
+              ).pipe(
+                map(({ Records, NextShardIterator }) => ({
+                  Records,
+                  NextShardIterator,
+                  ShardId: shardId,
+                }))
               )
             )
           )
           .subscribe({
-            next: ({ Records = [], NextShardIterator }) => {
+            next: ({ Records = [], NextShardIterator, ShardId }) => {
               const updates = Records.filter(
                 (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
               );
@@ -574,15 +586,35 @@ export class DynamoDBImpl<
                 subscriptions.push(
                   asyncScheduler.schedule(
                     () => {
-                      iterator.next(NextShardIterator);
+                      iterator.next({
+                        iterator: NextShardIterator,
+                        shardId: ShardId,
+                      });
                     },
                     !Records.length ? 100 : 0
                   )
                 );
               }
             },
-            error: (error) => {
+            error: async (error) => {
               this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
+              this.logger.debug?.(`[${this.id}] Last`, {
+                lastShardId,
+                lastShardIterator,
+                lastSequenceNumber,
+              });
+              this.logger.debug?.(
+                `[${this.id}] Describing stream`,
+                JSON.stringify(
+                  await this.streamClient.send(
+                    new DescribeStreamCommand({
+                      StreamArn: this.streamArn,
+                    })
+                  ),
+                  null,
+                  2
+                )
+              );
             },
             complete: () => {
               this.logger.debug?.(`[${this.id}] Stream iterator completed`);
