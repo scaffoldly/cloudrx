@@ -535,9 +535,9 @@ export class DynamoDBImpl<
           })
       );
 
-      let lastShardIterator: string | undefined = undefined;
-      let lastSequenceNumber: string | undefined = undefined;
-      let lastShardId: string | undefined = undefined;
+      // let lastShardIterator: string | undefined = undefined;
+      // let lastSequenceNumber: string | undefined = undefined;
+      // let lastShardId: string | undefined = undefined;
 
       subscriptions.push(
         iterator
@@ -550,8 +550,8 @@ export class DynamoDBImpl<
                 `[${this.id}] Fetching records with ShardIterator`,
                 position
               );
-              lastShardIterator = position.iterator;
-              lastShardId = position.shardId;
+              // lastShardIterator = position.iterator;
+              // lastShardId = position.shardId;
             }),
             concatMap(({ iterator, shardId }) =>
               from(
@@ -559,6 +559,14 @@ export class DynamoDBImpl<
                   new GetRecordsCommand({ ShardIterator: iterator })
                 )
               ).pipe(
+                catchError((e) => {
+                  if (e.name === 'TrimmedDataAccessException') {
+                    this.logger.warn?.(
+                      `[${this.id}] TODO HANDLE TrimmedDataAccessException!!!`
+                    );
+                  }
+                  return throwError(() => e);
+                }),
                 map(({ Records, NextShardIterator }) => ({
                   Records,
                   NextShardIterator,
@@ -574,12 +582,12 @@ export class DynamoDBImpl<
               );
               const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
-              lastSequenceNumber = Records.map(
-                (r) => r.dynamodb?.SequenceNumber
-              )
-                .sort()
-                .reverse()
-                .pop();
+              // lastSequenceNumber = Records.map(
+              //   (r) => r.dynamodb?.SequenceNumber
+              // )
+              //   .sort()
+              //   .reverse()
+              //   .pop();
 
               this.logger.debug?.(
                 `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
@@ -604,25 +612,8 @@ export class DynamoDBImpl<
                 );
               }
             },
-            error: async (error) => {
+            error: (error) => {
               this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
-              this.logger.debug?.(`[${this.id}] Last`, {
-                lastShardId,
-                lastShardIterator,
-                lastSequenceNumber,
-              });
-              this.logger.debug?.(
-                `[${this.id}] Describing stream`,
-                JSON.stringify(
-                  await this.streamClient.send(
-                    new DescribeStreamCommand({
-                      StreamArn: this.streamArn,
-                    })
-                  ),
-                  null,
-                  2
-                )
-              );
             },
             complete: () => {
               this.logger.debug?.(`[${this.id}] Stream iterator completed`);
