@@ -547,7 +547,8 @@ export class DynamoDBImpl<
             takeUntil(fromEvent(this.signal, 'abort')),
             tap((position) => {
               this.logger.debug?.(
-                `[${this.id}] Fetching records with ShardIterator: ${position}`
+                `[${this.id}] Fetching records with ShardIterator`,
+                position
               );
               lastShardIterator = position.iterator;
               lastShardId = position.shardId;
@@ -572,6 +573,13 @@ export class DynamoDBImpl<
                 (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
               );
               const deletes = Records.filter((r) => r.eventName === 'REMOVE');
+
+              lastSequenceNumber = Records.map(
+                (r) => r.dynamodb?.SequenceNumber
+              )
+                .sort()
+                .reverse()
+                .pop();
 
               this.logger.debug?.(
                 `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
