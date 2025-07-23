@@ -515,7 +515,7 @@ export class DynamoDBImpl<
         this.shards
           .pipe(
             tap((shard) => {
-              this.logger.debug?.(`[${this.id}] Found shard: ${shard.ShardId}`);
+              this.logger.debug?.(`[${this.id}] New shard: ${shard.ShardId}`);
             }),
             concatMap((shard) =>
               from(
@@ -555,26 +555,12 @@ export class DynamoDBImpl<
             observeOn(asyncScheduler),
             distinct(),
             takeUntil(fromEvent(this.signal, 'abort')),
-            tap((position) => {
-              this.logger.debug?.(
-                `[${this.id}] Fetching records with ShardIterator`,
-                position
-              );
-            }),
             concatMap(({ iterator, shardId }) =>
               from(
                 this.streamClient.send(
                   new GetRecordsCommand({ ShardIterator: iterator })
                 )
               ).pipe(
-                catchError((e) => {
-                  if (e.name === 'TrimmedDataAccessException') {
-                    this.logger.warn?.(
-                      `[${this.id}] TODO HANDLE TrimmedDataAccessException!!!`
-                    );
-                  }
-                  return throwError(() => e);
-                }),
                 map(({ Records, NextShardIterator }) => ({
                   Records,
                   NextShardIterator,
@@ -602,9 +588,9 @@ export class DynamoDBImpl<
 
               const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
-              this.logger.debug?.(
-                `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
-              );
+              // this.logger.debug?.(
+              //   `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
+              // );
 
               subscriber.next(updates);
               deletes.forEach((r) =>
@@ -732,19 +718,16 @@ export class DynamoDBImpl<
       }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
-        this.logger.debug?.(`[${this.id}] Matching event:`, {
-          hashKey: this.hashKey,
-          rangeKey: this.rangeKey,
-          hashKeyValue,
-          rangeKeyValue,
-          event: JSON.stringify(event),
-        });
         const dynamoRecord = event.dynamodb;
         if (!dynamoRecord?.Keys) return false;
         const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
         const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
 
         if (eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue) {
+          // TODO: Write sequence number to a checkpoint store
+          this.logger.debug?.(
+            `[${this.id}] Stored item matched event with SequenceNumber: ${dynamoRecord.SequenceNumber}`
+          );
           matched?.(event);
           return true;
         }
