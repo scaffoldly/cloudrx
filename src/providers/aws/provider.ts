@@ -661,6 +661,13 @@ export class DynamoDBImpl<
       }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
+        this.logger.trace?.(`[${this.id}] Matching event:`, {
+          hashKey: this.hashKey,
+          rangeKey: this.rangeKey,
+          hashKeyValue,
+          rangeKeyValue,
+          event: JSON.stringify(event),
+        });
         const dynamoRecord = event.dynamodb;
         if (!dynamoRecord?.Keys) return false;
         const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
