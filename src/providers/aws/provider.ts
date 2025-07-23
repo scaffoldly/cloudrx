@@ -22,6 +22,7 @@ import {
   combineLatest,
   concatMap,
   defer,
+  distinct,
   EMPTY,
   expand,
   filter,
@@ -530,6 +531,7 @@ export class DynamoDBImpl<
         iterator
           .pipe(
             observeOn(asyncScheduler),
+            distinct(),
             takeUntil(
               fromEvent(this.signal, 'abort').pipe(
                 tap(() =>
