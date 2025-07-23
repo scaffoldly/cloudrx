@@ -677,7 +677,9 @@ export class DynamoDBImpl<
           map((response) => {
             const items = (response.Items || []) as DynamoDBStoredData<T>[];
             // Extract the 'data' field from each DynamoDB record
-            return items.map((item) => item.data);
+            return items
+              .filter((item) => item[this.rangeKey] !== INIT_SIGNATURE)
+              .map((item) => item.data);
           })
         )
         .subscribe({
