@@ -661,7 +661,7 @@ export class DynamoDBImpl<
       }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
-        this.logger.trace?.(`[${this.id}] Matching event:`, {
+        this.logger.debug?.(`[${this.id}] Matching event:`, {
           hashKey: this.hashKey,
           rangeKey: this.rangeKey,
           hashKeyValue,
