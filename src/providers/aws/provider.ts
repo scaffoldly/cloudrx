@@ -37,6 +37,7 @@ import {
   Subscription,
   switchMap,
   takeUntil,
+  tap,
   throwError,
   timer,
 } from 'rxjs';
@@ -494,6 +495,9 @@ export class DynamoDBImpl<
       subscriptions.push(
         this.shards
           .pipe(
+            tap((shard) => {
+              this.logger.debug?.(`[${this.id}] Found shard: ${shard.ShardId}`);
+            }),
             concatMap((shard) =>
               from(
                 this.streamClient.send(
@@ -524,7 +528,20 @@ export class DynamoDBImpl<
       subscriptions.push(
         iterator
           .pipe(
-            takeUntil(fromEvent(this.signal, 'abort')),
+            takeUntil(
+              fromEvent(this.signal, 'abort').pipe(
+                tap(() =>
+                  this.logger.debug?.(
+                    `[${this.id}] Abort signal received, stopping stream`
+                  )
+                )
+              )
+            ),
+            tap((position) => {
+              this.logger.debug?.(
+                `[${this.id}] Fetching records with ShardIterator: ${position}`
+              );
+            }),
             concatMap((position) =>
               from(
                 this.streamClient.send(
@@ -535,13 +552,17 @@ export class DynamoDBImpl<
           )
           .subscribe({
             next: ({ Records = [], NextShardIterator }) => {
-              subscriber.next(
-                Records.filter(
-                  (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
-                )
+              const updates = Records.filter(
+                (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
+              );
+              const deletes = Records.filter((r) => r.eventName === 'REMOVE');
+
+              this.logger.debug?.(
+                `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
               );
 
-              Records.filter((r) => r.eventName === 'REMOVE').forEach((r) =>
+              subscriber.next(updates);
+              deletes.forEach((r) =>
                 this.events.expire(r.dynamodb?.SequenceNumber, r)
               );
 
