@@ -60,6 +60,8 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { random } from 'timeflake';
 
+const INIT_SIGNATURE = '__init__';
+
 export type DynamoDBOptions<
   THashKey extends string = 'hashKey',
   TRangeKey extends string = 'rangeKey',
@@ -452,15 +454,27 @@ export class DynamoDBImpl<
         this._tableArn = `${table.TableArn}`;
         this._streamArn = `${table.LatestStreamArn}`;
       }),
-      switchMap(() =>
-        combineLatest([
+      switchMap(() => {
+        const init: DynamoDBStoredData<Date> = {
+          [this.hashKey]: this.id,
+          [this.rangeKey]: INIT_SIGNATURE,
+          data: new Date(),
+        };
+
+        return combineLatest([
           this.client.config.region(),
           this.client.config.credentials(),
           this.client.config.endpoint
             ? this.client.config.endpoint()
             : Promise.resolve(undefined),
-        ])
-      ),
+          this.client.send(
+            new PutCommand({
+              TableName: this.tableName,
+              Item: init,
+            })
+          ),
+        ]);
+      }),
       map(([region, credentials, endpoint]) => {
         this.logger.debug?.(
           `[${this.id}] Creating stream client with endpoint:`,
@@ -535,10 +549,6 @@ export class DynamoDBImpl<
           })
       );
 
-      // let lastShardIterator: string | undefined = undefined;
-      // let lastSequenceNumber: string | undefined = undefined;
-      // let lastShardId: string | undefined = undefined;
-
       subscriptions.push(
         iterator
           .pipe(
@@ -550,8 +560,6 @@ export class DynamoDBImpl<
                 `[${this.id}] Fetching records with ShardIterator`,
                 position
               );
-              // lastShardIterator = position.iterator;
-              // lastShardId = position.shardId;
             }),
             concatMap(({ iterator, shardId }) =>
               from(
@@ -577,17 +585,22 @@ export class DynamoDBImpl<
           )
           .subscribe({
             next: ({ Records = [], NextShardIterator, ShardId }) => {
+              Records = Records.filter((r) => {
+                if (
+                  r.dynamodb?.Keys?.[this.hashKey]?.S === this.id &&
+                  r.dynamodb?.Keys?.[this.rangeKey]?.S === INIT_SIGNATURE
+                ) {
+                  this.logger.debug?.(`[${this.id}] Skipping init record`);
+                  return false;
+                }
+                return true;
+              });
+
               const updates = Records.filter(
                 (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
               );
-              const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
-              // lastSequenceNumber = Records.map(
-              //   (r) => r.dynamodb?.SequenceNumber
-              // )
-              //   .sort()
-              //   .reverse()
-              //   .pop();
+              const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
               this.logger.debug?.(
                 `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
