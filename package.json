@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postinstall": "tsc",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build",
     "lint": "eslint .",
@@ -38,15 +39,16 @@
   "author": "Scaffoldly <github.com/scaffoldly>",
   "license": "Apache-2.0",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.823.0",
-    "@aws-sdk/client-dynamodb-streams": "^3.823.0",
-    "@aws-sdk/lib-dynamodb": "^3.823.0",
-    "@aws-sdk/util-dynamodb": "^3.828.0",
+    "@aws-sdk/client-dynamodb": "^3.848.0",
+    "@aws-sdk/client-dynamodb-streams": "^3.848.0",
+    "@aws-sdk/lib-dynamodb": "^3.850.0",
+    "@aws-sdk/util-dynamodb": "^3.848.0",
     "bn.js": "^5.2.2",
     "timeflake": "^0.1.1"
   },
   "peerDependencies": {
-    "rxjs": "^7.0.0"
+    "rxjs": "^7.0.0",
+    "typescript": "^5.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",

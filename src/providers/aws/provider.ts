@@ -22,6 +22,7 @@ import {
   combineLatest,
   concatMap,
   defer,
+  distinct,
   EMPTY,
   expand,
   filter,
@@ -30,6 +31,7 @@ import {
   fromEvent,
   map,
   Observable,
+  observeOn,
   of,
   scan,
   shareReplay,
@@ -57,6 +59,8 @@ import {
   TranslateConfig,
 } from '@aws-sdk/lib-dynamodb';
 import { random } from 'timeflake';
+
+const INIT_SIGNATURE = '__init__';
 
 export type DynamoDBOptions<
   THashKey extends string = 'hashKey',
@@ -450,15 +454,27 @@ export class DynamoDBImpl<
         this._tableArn = `${table.TableArn}`;
         this._streamArn = `${table.LatestStreamArn}`;
       }),
-      switchMap(() =>
-        combineLatest([
+      switchMap(() => {
+        const init: DynamoDBStoredData<Date> = {
+          [this.hashKey]: this.id,
+          [this.rangeKey]: INIT_SIGNATURE,
+          data: new Date(),
+        };
+
+        return combineLatest([
           this.client.config.region(),
           this.client.config.credentials(),
           this.client.config.endpoint
             ? this.client.config.endpoint()
             : Promise.resolve(undefined),
-        ])
-      ),
+          this.client.send(
+            new PutCommand({
+              TableName: this.tableName,
+              Item: init,
+            })
+          ),
+        ]);
+      }),
       map(([region, credentials, endpoint]) => {
         this.logger.debug?.(
           `[${this.id}] Creating stream client with endpoint:`,
@@ -489,14 +505,17 @@ export class DynamoDBImpl<
         `[${this.id}] Starting _stream with ${shardIteratorType}, streamArn: ${this.streamArn}`
       );
 
-      const iterator = new Subject<string>();
+      const iterator = new Subject<{
+        iterator: string | undefined;
+        shardId: string | undefined;
+      }>();
       const subscriptions: Subscription[] = [];
 
       subscriptions.push(
         this.shards
           .pipe(
             tap((shard) => {
-              this.logger.debug?.(`[${this.id}] Found shard: ${shard.ShardId}`);
+              this.logger.debug?.(`[${this.id}] New shard: ${shard.ShardId}`);
             }),
             concatMap((shard) =>
               from(
@@ -507,13 +526,18 @@ export class DynamoDBImpl<
                     ShardIteratorType: shardIteratorType,
                   })
                 )
+              ).pipe(
+                map(({ ShardIterator }) => ({
+                  ShardIterator,
+                  ShardId: shard.ShardId,
+                }))
               )
             )
           )
           .subscribe({
-            next: ({ ShardIterator }) => {
+            next: ({ ShardIterator, ShardId }) => {
               if (ShardIterator) {
-                iterator.next(ShardIterator);
+                iterator.next({ iterator: ShardIterator, shardId: ShardId });
               }
             },
             error: (error) => {
@@ -528,38 +552,41 @@ export class DynamoDBImpl<
       subscriptions.push(
         iterator
           .pipe(
-            takeUntil(
-              fromEvent(this.signal, 'abort').pipe(
-                tap(() =>
-                  this.logger.debug?.(
-                    `[${this.id}] Abort signal received, stopping stream`
-                  )
-                )
-              )
-            ),
-            tap((position) => {
-              this.logger.debug?.(
-                `[${this.id}] Fetching records with ShardIterator: ${position}`
-              );
-            }),
-            concatMap((position) =>
+            observeOn(asyncScheduler),
+            distinct(),
+            takeUntil(fromEvent(this.signal, 'abort')),
+            concatMap(({ iterator, shardId }) =>
               from(
                 this.streamClient.send(
-                  new GetRecordsCommand({ ShardIterator: position })
+                  new GetRecordsCommand({ ShardIterator: iterator })
                 )
+              ).pipe(
+                map(({ Records, NextShardIterator }) => ({
+                  Records,
+                  NextShardIterator,
+                  ShardId: shardId,
+                }))
               )
             )
           )
           .subscribe({
-            next: ({ Records = [], NextShardIterator }) => {
+            next: ({ Records = [], NextShardIterator, ShardId }) => {
+              Records = Records.filter((r) => {
+                if (
+                  r.dynamodb?.Keys?.[this.hashKey]?.S === this.id &&
+                  r.dynamodb?.Keys?.[this.rangeKey]?.S === INIT_SIGNATURE
+                ) {
+                  this.logger.debug?.(`[${this.id}] Skipping init record`);
+                  return false;
+                }
+                return true;
+              });
+
               const updates = Records.filter(
                 (r) => r.eventName === 'INSERT' || r.eventName === 'MODIFY'
               );
-              const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
-              this.logger.debug?.(
-                `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
-              );
+              const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
               subscriber.next(updates);
               deletes.forEach((r) =>
@@ -570,18 +597,21 @@ export class DynamoDBImpl<
                 subscriptions.push(
                   asyncScheduler.schedule(
                     () => {
-                      iterator.next(NextShardIterator);
+                      iterator.next({
+                        iterator: NextShardIterator,
+                        shardId: ShardId,
+                      });
                     },
                     !Records.length ? 100 : 0
                   )
                 );
               }
             },
-            error: (_error) => {
-              // this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
+            error: (error) => {
+              this.logger.warn?.(`[${this.id}] Failed to get records:`, error);
             },
             complete: () => {
-              // this.logger.debug?.(`[${this.id}] Stream iterator completed`);
+              this.logger.debug?.(`[${this.id}] Stream iterator completed`);
               subscriber.next([]);
               subscriber.complete();
             },
@@ -629,7 +659,9 @@ export class DynamoDBImpl<
           map((response) => {
             const items = (response.Items || []) as DynamoDBStoredData<T>[];
             // Extract the 'data' field from each DynamoDB record
-            return items.map((item) => item.data);
+            return items
+              .filter((item) => item[this.rangeKey] !== INIT_SIGNATURE)
+              .map((item) => item.data);
           })
         )
         .subscribe({
@@ -682,19 +714,16 @@ export class DynamoDBImpl<
       }
 
       const matcher: Matcher<_Record> = (event: _Record): boolean => {
-        this.logger.debug?.(`[${this.id}] Matching event:`, {
-          hashKey: this.hashKey,
-          rangeKey: this.rangeKey,
-          hashKeyValue,
-          rangeKeyValue,
-          event: JSON.stringify(event),
-        });
         const dynamoRecord = event.dynamodb;
         if (!dynamoRecord?.Keys) return false;
         const eventHashKey = dynamoRecord.Keys[this.hashKey]?.S;
         const eventRangeKey = dynamoRecord.Keys[this.rangeKey]?.S;
 
         if (eventHashKey === hashKeyValue && eventRangeKey === rangeKeyValue) {
+          // TODO: Write sequence number to a checkpoint store
+          this.logger.debug?.(
+            `[${this.id}] Stored item matched event with SequenceNumber: ${dynamoRecord.SequenceNumber}`
+          );
           matched?.(event);
           return true;
         }
