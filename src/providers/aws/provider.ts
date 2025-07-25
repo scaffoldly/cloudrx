@@ -588,10 +588,6 @@ export class DynamoDBImpl<
 
               const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
-              // this.logger.debug?.(
-              //   `[${this.id}] Streamed ${Records.length} records (${updates.length} updates, ${deletes.length} deletes)`
-              // );
-
               subscriber.next(updates);
               deletes.forEach((r) =>
                 this.events.expire(r.dynamodb?.SequenceNumber, r)
