@@ -1,5 +1,6 @@
 import {
   GenericContainer,
+  PullPolicy,
   StartedTestContainer,
   TestContainer,
 } from 'testcontainers';
@@ -14,7 +15,9 @@ export class DynamoDBLocalContainer {
 
   constructor() {
     this.logger = CloudProvider.DEFAULT_LOGGER || console;
-    this.container = new GenericContainer('amazon/dynamodb-local:latest')
+    // TODO: Get ddb-local@3 working
+    this.container = new GenericContainer('amazon/dynamodb-local:2.6.1')
+      .withPullPolicy(PullPolicy.alwaysPull())
       .withExposedPorts(8000)
       .withCommand(['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']);
   }
