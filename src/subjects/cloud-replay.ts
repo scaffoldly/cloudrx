@@ -15,20 +15,28 @@ import {
 } from 'rxjs';
 
 export type SubjectEventType = 'expired';
+export type CloudReplayOptions<T> = {
+  hashFn?: (value: T) => string;
+};
 
 export class CloudReplaySubject<T> extends ReplaySubject<T> {
   private buffer = new ReplaySubject<Expireable<T>>();
   private emitter = new EventEmitter<{ [K in SubjectEventType]: [T] }>();
   private subscription: Subscription;
 
-  constructor(private provider$: Observable<ICloudProvider<unknown>>) {
+  constructor(
+    private provider$: Observable<ICloudProvider<unknown>>,
+    private options?: CloudReplayOptions<T>
+  ) {
     super();
 
     this.subscription = provider$
       .pipe(
         first(),
         switchMap((provider) => {
-          const persisted = this.buffer.pipe(persist(of(provider)));
+          const persisted = this.buffer.pipe(
+            persist(of(provider), this.options?.hashFn)
+          );
           const streamed = provider
             .stream(true)
             .pipe(map((event) => provider.unmarshall<T>(event)));
@@ -67,7 +75,10 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     timing?: Date | number | { emitAt?: Date; expireAt?: Date } // TODO: implement emitAt
   ): void {
     if (!timing) {
-      return this.buffer.next(value as Expireable<T>);
+      return this.buffer.next({
+        ...value,
+        hashFn: this.options?.hashFn,
+      } as Expireable<T>);
     }
 
     if (typeof timing === 'number') {
@@ -85,8 +96,9 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
     if (timing.expireAt && !timing.emitAt) {
       return this.buffer.next({
         ...value,
+        hashFn: this.options?.hashFn,
         __expires: CloudProvider.TIME(timing.expireAt),
-      });
+      } as Expireable<T>);
     }
 
     if (!timing.expireAt && timing.emitAt) {

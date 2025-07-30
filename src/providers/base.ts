@@ -44,7 +44,10 @@ export type Matcher<TEvent> = (
   matched?: (event: TEvent) => void
 ) => boolean;
 
-export type Expireable<T> = T & { __expires?: number };
+export type Expireable<T> = T & {
+  __expires?: number;
+  hashFn?: (value: T) => string;
+};
 
 export type StreamEvents<T> = { start: []; expired: [T]; end: [] };
 export class StreamEvent<TEvent, TMarker> extends EventEmitter<
@@ -169,6 +172,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
   protected abstract _store<T>(
     item: Expireable<T>,
+    hashFn?: (value: T) => string,
     matched?: (event: TEvent) => void
   ): Observable<Matcher<TEvent>>;
   protected abstract _unmarshall<T>(
@@ -327,7 +331,10 @@ export abstract class CloudProvider<TEvent, TMarker>
       let stream: Subscription | undefined;
       let match: Subscription | undefined;
       const store = asyncScheduler.schedule(() => {
-        const match$ = this._store(item).pipe(
+        const hashFn = item.hashFn;
+        delete item.hashFn;
+
+        const match$ = this._store(item, hashFn).pipe(
           observeOn(asyncScheduler),
           take(1),
           shareReplay(1)

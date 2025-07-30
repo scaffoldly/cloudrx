@@ -15,6 +15,7 @@ import {
   CloudOptions,
   Expireable,
 } from '../base';
+import { random } from 'timeflake';
 
 type MemoryDelays = {
   init?: number; // Initialization delay in milliseconds
@@ -160,6 +161,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
 
   protected _store<T>(
     item: Expireable<T>,
+    hashFn: (value: T) => string = () => random().base62,
     matched?: (event: Record) => void
   ): Observable<(event: Record) => boolean> {
     return new Observable<Matcher<Record>>((subscriber) => {
@@ -171,7 +173,7 @@ export class Memory extends CloudProvider<Record, Record['id']> {
         return;
       }
 
-      const id = crypto.randomUUID();
+      const id = hashFn(item);
       this.logger.debug?.(`[${this.id}] Storing item with id ${id}:`, item);
 
       const data: Data = {
