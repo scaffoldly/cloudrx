@@ -10,7 +10,8 @@ import {
 import { Expireable, ICloudProvider } from '../providers';
 
 export const persist = <T>(
-  provider?: Observable<ICloudProvider<unknown>>
+  provider?: Observable<ICloudProvider<unknown>>,
+  hashFn?: (value: T) => string
 ): MonoTypeOperatorFunction<T> => {
   return (source: Observable<T>): Observable<T> => {
     return new Observable<T>((subscriber) => {
@@ -25,7 +26,7 @@ export const persist = <T>(
         if (!state.provider) {
           return of(value).pipe(delay(1000));
         }
-        return state.provider.store(value as Expireable<T>);
+        return state.provider.store({ ...value, hashFn } as Expireable<T>);
       };
 
       const checkCompletion = (): void => {

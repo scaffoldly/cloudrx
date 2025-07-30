@@ -695,13 +695,14 @@ export class DynamoDBImpl<
 
   protected _store<T>(
     item: Expireable<T>,
+    hashFn: (value: T) => string = () => random().base62,
     matched?: (event: _Record) => void
   ): Observable<Matcher<_Record>> {
     return new Observable<Matcher<_Record>>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Storing item:`, item);
 
       const hashKeyValue = this.id;
-      const rangeKeyValue = random().base62;
+      const rangeKeyValue = hashFn(item);
 
       const record: DynamoDBStoredData<T> = {
         [this.hashKey]: hashKeyValue,
