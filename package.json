@@ -38,10 +38,10 @@
   "author": "Scaffoldly <github.com/scaffoldly>",
   "license": "Apache-2.0",
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.848.0",
-    "@aws-sdk/client-dynamodb-streams": "^3.848.0",
-    "@aws-sdk/lib-dynamodb": "^3.850.0",
-    "@aws-sdk/util-dynamodb": "^3.848.0",
+    "@aws-sdk/client-dynamodb": "^3.864.0",
+    "@aws-sdk/client-dynamodb-streams": "^3.864.0",
+    "@aws-sdk/lib-dynamodb": "^3.864.0",
+    "@aws-sdk/util-dynamodb": "^3.864.0",
     "bn.js": "^5.2.2",
     "timeflake": "^0.1.1"
   },
