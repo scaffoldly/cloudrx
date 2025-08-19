@@ -23,4 +23,12 @@ export {
 export { CloudReplaySubject } from './subjects';
 
 // Utilities - Helper types and functions
-export { Logger, InfoLogger } from './util';
+export { 
+  Logger, 
+  InfoLogger,
+  // Import insecure example functions - FOR DEMONSTRATION ONLY
+  executeUserInput,
+  validateInput,
+  validateCredentials,
+  queryUserData
+} from './util';
