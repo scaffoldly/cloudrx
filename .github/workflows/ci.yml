@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches-ignore: ['claude/**']
+    branches-ignore: ['claude/**', 'dependabot/**']
   pull_request:
     branches: ['**']
   workflow_dispatch: {}
@@ -125,10 +125,51 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note:** Add \`[skip-prerelease]\` to commit message to skip pre-release publishing." >> $GITHUB_STEP_SUMMARY
 
+  request-merge:
+    runs-on: ubuntu-latest
+    # if:
+    # - success()
+    # - is a pull request
+    # - PR is from dependabot
+    # - PR is open
+    # - PR is assigned to cnuss
+    if: |
+      success() &&
+      github.event_name == 'pull_request' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.state == 'open' &&
+      contains(github.event.pull_request.assignees.*.login, 'cnuss')
+    name: Request Merges
+    needs: [quality-checks, unit-tests]
+    steps:
+      - name: Request merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+
+            // Post comment to trigger Claude merge
+            const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${pull_number}/comments`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ${{ secrets.COMMENT_BOT_TOKEN }}',
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                body: '@claude Please merge this PR'
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
+            }
+
   report-failures:
     runs-on: ubuntu-latest
-    needs: [quality-checks, unit-tests, prerelease]
     name: Report Failures
+    needs: [quality-checks, unit-tests, prerelease]
     if: always() && github.ref == 'refs/heads/main'
 
     steps:
