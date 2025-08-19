@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches-ignore: ['claude/**', 'dependabot/**']
-  pull_request:
+  pull_request_target:
     branches: ['**']
   workflow_dispatch: {}
 
@@ -135,7 +135,7 @@ jobs:
     # - PR is assigned to cnuss
     if: |
       success() &&
-      github.event_name == 'pull_request' &&
+      github.event_name == 'pull_request_target' &&
       github.actor == 'dependabot[bot]' &&
       github.event.pull_request.state == 'open' &&
       contains(github.event.pull_request.requested_reviewers.*.login, 'cnuss')
@@ -144,16 +144,18 @@ jobs:
     steps:
       - name: Request merge
         uses: actions/github-script@v7
+        env:
+          COMMENT_BOT_TOKEN: ${{ secrets.COMMENT_BOT_TOKEN }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const pull_number = context.payload.pull_request.number;
 
-            // Post comment to trigger Claude merge
+            // Post comment to trigger Claude merge using the token from env
             const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${pull_number}/comments`, {
               method: 'POST',
               headers: {
-                'Authorization': 'Bearer ${{ secrets.COMMENT_BOT_TOKEN }}',
+                'Authorization': `Bearer ${process.env.COMMENT_BOT_TOKEN}`,
                 'Accept': 'application/vnd.github.v3+json',
                 'Content-Type': 'application/json'
               },
