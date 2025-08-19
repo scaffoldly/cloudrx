@@ -1,6 +1,11 @@
 import { EventEmitter } from 'stream';
 import { persist } from '../operators';
-import { CloudProvider, Expireable, ICloudProvider } from '../providers';
+import {
+  CloudProvider,
+  Expireable,
+  Filter,
+  ICloudProvider,
+} from '../providers';
 import {
   first,
   ignoreElements,
@@ -63,10 +68,10 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
       });
   }
 
-  public snapshot(): Observable<T[]> {
+  public snapshot(filter?: Filter<T>): Observable<T[]> {
     return this.provider$.pipe(
       first(),
-      switchMap((provider) => provider.snapshot<T>())
+      switchMap((provider) => provider.snapshot<T>(filter || {}))
     );
   }
 

@@ -22,13 +22,19 @@ export type Streamed<T, TMarker> = T & {
   __marker__?: TMarker;
 };
 
+export type Primitive = string | number | boolean | null | undefined;
+
+export type Filter<T> = {
+  [K in keyof T as T[K] extends Primitive ? K : never]?: T[K];
+};
+
 export interface ICloudProvider<TEvent> {
   get id(): string;
   get signal(): AbortSignal;
   get logger(): Logger;
 
   init(): Observable<this>;
-  snapshot<T>(): Observable<T[]>;
+  snapshot<T>(filter: Filter<T>): Observable<T[]>;
   stream(all?: boolean): Observable<TEvent>;
   expired(): Observable<TEvent>;
   store<T>(item: Expireable<T>): Observable<T>;
@@ -168,7 +174,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   }
 
   protected abstract _init(): Observable<this>;
-  protected abstract _snapshot<T>(): Observable<T[]>;
+  protected abstract _snapshot<T>(filter: Filter<T>): Observable<T[]>;
   protected abstract _stream(all: boolean): Observable<TEvent[]>;
   protected abstract _store<T>(
     item: Expireable<T>,
@@ -196,9 +202,9 @@ export abstract class CloudProvider<TEvent, TMarker>
     });
   }
 
-  public snapshot<T>(): Observable<T[]> {
+  public snapshot<T>(filter: Filter<T>): Observable<T[]> {
     return new Observable<T[]>((subscriber) => {
-      const subscription = this._snapshot<T>().subscribe(subscriber);
+      const subscription = this._snapshot<T>(filter).subscribe(subscriber);
 
       return () => {
         subscription.unsubscribe();

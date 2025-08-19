@@ -263,3 +263,4 @@ export interface Logger {
 
 **Solution**: Added `setMaxListeners(50)` in `tests/setup.ts` to handle legitimate test scenarios with multiple AbortSignal instances
 **Key Learning**: AbortSignal extends EventTarget (not EventEmitter), so instance-level `setMaxListeners()` is not available
+- don't call things production ready unless tests have been added

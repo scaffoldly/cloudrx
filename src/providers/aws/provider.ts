@@ -15,6 +15,7 @@ import {
   FatalError,
   RetryError,
   Expireable,
+  Filter,
 } from '../base';
 import {
   asyncScheduler,
@@ -626,17 +627,29 @@ export class DynamoDBImpl<
     });
   }
 
-  protected _snapshot<T>(): Observable<T[]> {
+  protected _snapshot<T>(filter: Filter<T>): Observable<T[]> {
     return new Observable<T[]>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Fetching snapshot from DynamoDB...`);
 
-      // TODO: Do a quck scan to figure out KeyConditionExpression values
+      const { expressions, filters } = Object.entries(filter).reduce(
+        (acc, [key, value]) => {
+          acc.expressions[`:${key}`] = value;
+          acc.filters.push(`${key} = :${key}`);
+          return acc;
+        },
+        {
+          expressions: {
+            ':hashKey': this.id,
+          } as Record<string, unknown>,
+          filters: [] as string[],
+        }
+      );
+
       let query = new QueryCommand({
         TableName: this.tableName,
         KeyConditionExpression: `${this.hashKey} = :hashKey`,
-        ExpressionAttributeValues: {
-          ':hashKey': this.id,
-        },
+        FilterExpression: filters.length ? filters.join(' AND ') : undefined,
+        ExpressionAttributeValues: expressions,
         ScanIndexForward: false,
       });
 

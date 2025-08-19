@@ -48,14 +48,27 @@ describe('cloud-replay', () => {
 
   const snapshot = async (
     seedData: Data[],
-    subject: CloudReplaySubject<Data>
+    subject: CloudReplaySubject<Data>,
+    filter?: Partial<Data>
   ): Promise<void> => {
-    const snapshot = await lastValueFrom(subject.snapshot());
+    const snapshot = await lastValueFrom(subject.snapshot(filter));
 
-    expect(snapshot.length).toBe(seedData.length);
-    seedData.forEach((item) => {
-      expect(snapshot).toContainEqual(item);
-    });
+    if (!filter) {
+      expect(snapshot.length).toBe(seedData.length);
+      seedData.forEach((item) => {
+        expect(snapshot).toContainEqual(item);
+      });
+    } else {
+      const seedDataFiltered = seedData.filter((item) =>
+        Object.entries(filter).every(
+          ([key, value]) => item[key as keyof Data] === value
+        )
+      );
+      expect(snapshot.length).toBe(seedDataFiltered.length);
+      seedDataFiltered.forEach((item) => {
+        expect(snapshot).toContainEqual(item);
+      });
+    }
   };
 
   const backfill = async (
@@ -168,6 +181,13 @@ describe('cloud-replay', () => {
       await snapshot(seedData, subject);
     });
 
+    test('snapshot-filter', async () => {
+      const provider = Memory.from(testId());
+      const seedData = await seed(provider);
+      const subject = new CloudReplaySubject<Data>(provider);
+      await snapshot(seedData, subject, { message: 'data-3' });
+    });
+
     test('backfill', async () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
@@ -217,6 +237,13 @@ describe('cloud-replay', () => {
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await snapshot(seedData, subject);
+    });
+
+    test('snapshot-filter', async () => {
+      const provider = Memory.from(testId());
+      const seedData = await seed(provider);
+      const subject = new CloudReplaySubject<Data>(provider);
+      await snapshot(seedData, subject, { message: 'data-3' });
     });
 
     test('backfill', async () => {

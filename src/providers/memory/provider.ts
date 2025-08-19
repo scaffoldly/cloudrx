@@ -14,6 +14,7 @@ import {
   Matcher,
   CloudOptions,
   Expireable,
+  Filter,
 } from '../base';
 import { random } from 'timeflake';
 
@@ -143,18 +144,26 @@ export class Memory extends CloudProvider<Record, Record['id']> {
     });
   }
 
-  protected _snapshot<T>(): Observable<T[]> {
+  protected _snapshot<T>(filter: Filter<T>): Observable<T[]> {
     // HACK: get _all._buffer directly
     const all = this._all as unknown as { _buffer: Record[][] };
 
     return of(
       all._buffer.reverse().flatMap((records) =>
-        records.map((record) => {
-          const unmarshalled = this._unmarshall(record);
-          delete unmarshalled.__marker__;
-          delete unmarshalled.__expires;
-          return unmarshalled as T;
-        })
+        records
+          .map((record) => {
+            const unmarshalled = this._unmarshall(record);
+            delete unmarshalled.__marker__;
+            delete unmarshalled.__expires;
+            return unmarshalled as T;
+          })
+          .filter((item) =>
+            Object.entries(filter).reduce(
+              (matches, [key, value]) =>
+                matches && item[key as keyof T] === value,
+              true
+            )
+          )
       )
     );
   }
