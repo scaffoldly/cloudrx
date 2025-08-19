@@ -160,7 +160,7 @@ jobs:
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                body: '@claude Please merge this PR'
+                body: '@claude Please merge this PR.\n\n_(NOTE: this comment was automatically added by CI)_'
               })
             });
 
@@ -233,7 +233,7 @@ jobs:
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                body: '@claude Please investigate this CI failure.'
+                body: '@claude Please investigate this CI failure.\n\n_(NOTE: this comment was automatically added by CI)_'
               })
             });
 
