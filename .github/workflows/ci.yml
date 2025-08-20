@@ -35,7 +35,6 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
-    needs: quality-checks
     name: Unit Tests
 
     strategy:
@@ -193,23 +192,23 @@ jobs:
               repo: context.repo.repo,
               title: `CI Failure on main branch (${context.sha.substring(0, 7)})`,
               body: `## 🚨 CI Failure on Main Branch
-            
+
             **Commit:** ${context.sha.substring(0, 7)}
             **Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})
             **Time:** ${new Date().toISOString()}
-            
+
             ### Job Status:
             ${jobs.map(job => {
               const icon = job.result === 'success' ? '✅' : '❌';
               return `- ${icon} ${job.name}`;
             }).join('\n')}
-            
+
             ### Next Steps:
             1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})
             2. Check the logs for specific error details
             3. Fix the failing tests or publishing issues
             4. Close this issue once resolved
-            
+
             *This issue was automatically created by GitHub Actions.*`,
               labels: ['bug', 'ci-failure', 'main-branch']
             });
