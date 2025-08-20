@@ -172,7 +172,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Report Failures
     needs: [quality-checks, unit-tests, prerelease]
-    if: always() && github.ref == 'refs/heads/main'
+    if: failure() && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout code
@@ -182,45 +182,35 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const qualityChecksFailed = '${{ needs.quality-checks.result }}' === 'failure';
-            const unitTestsFailed = '${{ needs.unit-tests.result }}' === 'failure';
-            const prereleaseFailed = '${{ needs.prerelease.result }}' === 'failure';
-
-            if(!qualityChecksFailed && !unitTestsFailed && !prereleaseFailed) {
-              console.log('No failures detected.');
-              return;
-            }
-
-            let issueBody = `## 🚨 CI Failure on Main Branch\n\n`;
-            issueBody += `**Commit:** ${context.sha.substring(0, 7)}\n`;
-            issueBody += `**Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
-            issueBody += `**Time:** ${new Date().toISOString()}\n\n`;
-
-            issueBody += `### Failed Jobs:\n`;
-            if (qualityChecksFailed) {
-              issueBody += `- ❌ Quality Checks\n`;
-            }
-            if (unitTestsFailed) {
-              issueBody += `- ❌ Unit Tests\n`;
-            }
-            if (prereleaseFailed) {
-              issueBody += `- ❌ Pre-release Publishing\n`;
-            }
-
-            issueBody += `\n### Next Steps:\n`;
-            issueBody += `1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n`;
-            issueBody += `2. Check the logs for specific error details\n`;
-            issueBody += `3. Fix the failing tests or publishing issues\n`;
-            issueBody += `4. Close this issue once resolved\n\n`;
-            issueBody += `*This issue was automatically created by GitHub Actions.*`;
-
-            const title = `CI Failure on main branch (${context.sha.substring(0, 7)})`;
+            const jobs = [
+              { name: 'Quality Checks', result: '${{ needs.quality-checks.result }}' },
+              { name: 'Unit Tests', result: '${{ needs.unit-tests.result }}' },
+              { name: 'Pre-release Publishing', result: '${{ needs.prerelease.result }}' }
+            ];
 
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: title,
-              body: issueBody,
+              title: `CI Failure on main branch (${context.sha.substring(0, 7)})`,
+              body: `## 🚨 CI Failure on Main Branch
+            
+            **Commit:** ${context.sha.substring(0, 7)}
+            **Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            **Time:** ${new Date().toISOString()}
+            
+            ### Job Status:
+            ${jobs.map(job => {
+              const icon = job.result === 'success' ? '✅' : '❌';
+              return `- ${icon} ${job.name}`;
+            }).join('\n')}
+            
+            ### Next Steps:
+            1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            2. Check the logs for specific error details
+            3. Fix the failing tests or publishing issues
+            4. Close this issue once resolved
+            
+            *This issue was automatically created by GitHub Actions.*`,
               labels: ['bug', 'ci-failure', 'main-branch']
             });
 
