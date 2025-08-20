@@ -64,9 +64,9 @@ jobs:
         with:
           fail_ci_if_error: false
 
-  report-failures:
+  create-issues:
     runs-on: ubuntu-latest
-    name: Report Failures
+    name: Create Issues
     needs: [quality-checks, unit-tests]
     if: |
       failure() &&
@@ -191,7 +191,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note:** Add \`[skip-prerelease]\` to commit message to skip pre-release publishing." >> $GITHUB_STEP_SUMMARY
 
-  request-merge:
+  merge-prs:
     runs-on: ubuntu-latest
     # if:
     # - success()
@@ -205,7 +205,7 @@ jobs:
       github.actor == 'dependabot[bot]' &&
       github.event.pull_request.state == 'open' &&
       contains(github.event.pull_request.requested_reviewers.*.login, 'cnuss')
-    name: Request Merges
+    name: Merge PRs
     needs: [quality-checks, unit-tests]
     steps:
       - name: Request merge
