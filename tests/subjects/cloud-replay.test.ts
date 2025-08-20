@@ -51,6 +51,8 @@ describe('cloud-replay', () => {
     subject: CloudReplaySubject<Data>,
     filter?: Partial<Data>
   ): Promise<void> => {
+    const unfiltered = await lastValueFrom(subject.snapshot());
+    console.log('!!! Unfiltered snapshot:', unfiltered);
     const snapshot = await lastValueFrom(subject.snapshot(filter));
 
     if (!filter) {
@@ -240,7 +242,7 @@ describe('cloud-replay', () => {
     });
 
     test('snapshot-filter', async () => {
-      const provider = Memory.from(testId());
+      const provider = DynamoDB.from(testId(), options);
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await snapshot(seedData, subject, { message: 'data-3' });

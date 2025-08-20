@@ -631,16 +631,18 @@ export class DynamoDBImpl<
     return new Observable<T[]>((subscriber) => {
       this.logger.debug?.(`[${this.id}] Fetching snapshot from DynamoDB...`);
 
-      const { expressions, filters } = Object.entries(filter).reduce(
+      const { expressions, names, filters } = Object.entries(filter).reduce(
         (acc, [key, value]) => {
           acc.expressions[`:${key}`] = value;
-          acc.filters.push(`${key} = :${key}`);
+          acc.names[`#${key}`] = key;
+          acc.filters.push(`#data.#${key} = :${key}`);
           return acc;
         },
         {
           expressions: {
             ':hashKey': this.id,
           } as Record<string, unknown>,
+          names: { '#data': 'data' } as Record<string, string>,
           filters: [] as string[],
         }
       );
@@ -649,8 +651,10 @@ export class DynamoDBImpl<
         TableName: this.tableName,
         KeyConditionExpression: `${this.hashKey} = :hashKey`,
         FilterExpression: filters.length ? filters.join(' AND ') : undefined,
+        ExpressionAttributeNames: filters.length ? names : undefined,
         ExpressionAttributeValues: expressions,
         ScanIndexForward: false,
+        ConsistentRead: true,
       });
 
       const subscription = from(this.client.query(query.input))
