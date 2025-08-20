@@ -35,6 +35,7 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
+    needs: quality-checks
     name: Unit Tests
 
     strategy:
@@ -64,11 +65,78 @@ jobs:
         with:
           fail_ci_if_error: false
 
+  report-failures:
+    runs-on: ubuntu-latest
+    name: Report Failures
+    needs: [quality-checks, unit-tests]
+    if: |
+      failure() &&
+      github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create failure issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = [
+              { name: 'Quality Checks', result: '${{ needs.quality-checks.result }}' },
+              { name: 'Unit Tests', result: '${{ needs.unit-tests.result }}' }
+            ];
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `CI Failure on main branch (${context.sha.substring(0, 7)})`,
+              body: `## 🚨 CI Failure on Main Branch
+
+            **Commit:** ${context.sha.substring(0, 7)}
+            **Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            **Time:** ${new Date().toISOString()}
+
+            ### Job Status:
+            ${jobs.map(job => {
+              const icon = job.result === 'success' ? '✅' : '❌';
+              return `- ${icon} ${job.name}`;
+            }).join('\n')}
+
+            ### Next Steps:
+            1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            2. Check the logs for specific error details
+            3. Fix the failing tests or publishing issues
+            4. Close this issue once resolved
+
+            *This issue was automatically created by GitHub Actions.*`,
+              labels: ['bug', 'ci-failure', 'main-branch']
+            });
+
+            // Add a comment with investigation details using specific token
+            const response = await fetch(`https://api.github.com/repos/${context.repo.owner}/${context.repo.repo}/issues/${issue.data.number}/comments`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ${{ secrets.COMMENT_BOT_TOKEN }}',
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                body: '@claude Please investigate this CI failure.\n\n_(NOTE: this comment was automatically added by CI)_'
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
+            }
+
   prerelease:
     runs-on: ubuntu-latest
     needs: [quality-checks, unit-tests]
     name: Pre-release to NPM
-    if: github.ref == 'refs/heads/main' && success() && !contains(github.event.head_commit.message, '[skip-prerelease]')
+    if: |
+      success() &&
+      github.ref == 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, '[skip-prerelease]')
 
     steps:
       - name: Checkout code
@@ -160,69 +228,6 @@ jobs:
               },
               body: JSON.stringify({
                 body: '@claude Please merge this PR.\n\n_(NOTE: this comment was automatically added by CI)_'
-              })
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
-            }
-
-  report-failures:
-    runs-on: ubuntu-latest
-    name: Report Failures
-    needs: [quality-checks, unit-tests, prerelease]
-    if: failure() && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Create failure issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const jobs = [
-              { name: 'Quality Checks', result: '${{ needs.quality-checks.result }}' },
-              { name: 'Unit Tests', result: '${{ needs.unit-tests.result }}' },
-              { name: 'Pre-release Publishing', result: '${{ needs.prerelease.result }}' }
-            ];
-
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `CI Failure on main branch (${context.sha.substring(0, 7)})`,
-              body: `## 🚨 CI Failure on Main Branch
-
-            **Commit:** ${context.sha.substring(0, 7)}
-            **Workflow:** [${context.workflow}](${context.payload.repository.html_url}/actions/runs/${context.runId})
-            **Time:** ${new Date().toISOString()}
-
-            ### Job Status:
-            ${jobs.map(job => {
-              const icon = job.result === 'success' ? '✅' : '❌';
-              return `- ${icon} ${job.name}`;
-            }).join('\n')}
-
-            ### Next Steps:
-            1. Review the [failed workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})
-            2. Check the logs for specific error details
-            3. Fix the failing tests or publishing issues
-            4. Close this issue once resolved
-
-            *This issue was automatically created by GitHub Actions.*`,
-              labels: ['bug', 'ci-failure', 'main-branch']
-            });
-
-            // Add a comment with investigation details using specific token
-            const response = await fetch(`https://api.github.com/repos/${context.repo.owner}/${context.repo.repo}/issues/${issue.data.number}/comments`, {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Bearer ${{ secrets.COMMENT_BOT_TOKEN }}',
-                'Accept': 'application/vnd.github.v3+json',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                body: '@claude Please investigate this CI failure.\n\n_(NOTE: this comment was automatically added by CI)_'
               })
             });
 
