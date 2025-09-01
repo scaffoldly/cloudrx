@@ -590,8 +590,11 @@ export class DynamoDBImpl<
               const deletes = Records.filter((r) => r.eventName === 'REMOVE');
 
               subscriber.next(updates);
+
               deletes.forEach((r) =>
-                this.events.expire(r.dynamodb?.SequenceNumber, r)
+                asyncScheduler.schedule(() =>
+                  this.events.expire(r.dynamodb?.SequenceNumber, r)
+                )
               );
 
               if (NextShardIterator) {
