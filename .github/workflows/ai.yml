@@ -34,8 +34,9 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           use_bedrock: true
+          github_token: ${{ secrets.COMMENT_BOT_TOKEN }}
         env:
           AWS_REGION: us-east-1
