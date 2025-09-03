@@ -135,6 +135,7 @@ jobs:
     if: |
       success() &&
       github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request_target' &&
       !contains(github.event.head_commit.message, '[skip-prerelease]')
 
     steps:
