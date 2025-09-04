@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // Operators - Core RxJS-style operators
 export { persist, persistReplay, semaphore } from './operators';
 
@@ -24,3 +26,15 @@ export { CloudReplaySubject } from './subjects';
 
 // Utilities - Helper types and functions
 export { Logger, InfoLogger } from './util';
+
+// CLI - Command Line Interface entry point
+import { Cli } from './cli';
+
+// Cli Entrypoint
+if (require.main === module) {
+  Cli.run().catch((error) => {
+    process.stderr.write('CLI Error:', error);
+    process.stderr.write('\n');
+    process.exit(1);
+  });
+}
