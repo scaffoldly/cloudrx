@@ -3,9 +3,12 @@ import { hideBin } from 'yargs/helpers';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { CliLogger } from '../util/logger';
+import { DynamoDB } from '../providers';
+import { fromEvent, firstValueFrom } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 interface StreamArguments {
-  provider: 'dynamodb' | 'memory';
+  provider: 'dynamodb';
   resource: string;
   from?: string;
   format: 'json' | 'pretty';
@@ -24,7 +27,7 @@ export class Cli {
             .positional('provider', {
               describe: 'Cloud provider (e.g., dynamodb)',
               type: 'string',
-              choices: ['dynamodb', 'memory'],
+              choices: ['dynamodb'],
             })
             .positional('resource', {
               describe: 'Resource identifier (e.g., table name)',
@@ -71,11 +74,86 @@ export class Cli {
     if (from) logger.info(`Starting from: ${from}`);
     logger.info(`Format: ${format}`);
 
-    // TODO: Implement actual streaming logic
-    logger.warn('Streaming functionality not yet implemented');
+    const abortController = new AbortController();
+    const signal = abortController.signal;
 
-    // Example of how stream data would go to stdout:
-    // logger.outputStream(JSON.stringify({ event: 'sample' }) + '\n');
+    // Handle process termination signals
+    const cleanup = (): void => {
+      logger.info('Shutting down stream...');
+      abortController.abort();
+    };
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    try {
+      const options = {
+        hashKey: 'id',
+        rangeKey: 'timestamp',
+        signal,
+      };
+      const provider$ = DynamoDB.from(resource, options);
+      const cloudProvider = await firstValueFrom(provider$);
+
+      logger.info('Starting stream...');
+
+      // Create the stream with takeUntil for proper cleanup
+      const stream$ = cloudProvider
+        .stream(true)
+        .pipe(takeUntil(fromEvent(signal, 'abort')));
+
+      // Subscribe to the stream
+      await new Promise<void>((resolve, reject) => {
+        stream$.subscribe({
+          next: (event: unknown) => {
+            try {
+              if (format === 'json') {
+                logger.outputStream(JSON.stringify(event) + '\n');
+              } else {
+                // Pretty format
+                const eventObj = event as {
+                  timestamp?: number;
+                  payload?: unknown;
+                };
+                const timestamp = eventObj.timestamp
+                  ? new Date(eventObj.timestamp).toISOString()
+                  : new Date().toISOString();
+                logger.outputStream(
+                  `[${timestamp}] ${JSON.stringify(eventObj.payload, null, 2)}\n`
+                );
+              }
+            } catch (error) {
+              logger.error('Error formatting output:', error);
+            }
+          },
+          error: (error: unknown) => {
+            if (error instanceof Error && error.name === 'AbortError') {
+              logger.debug('Stream aborted');
+              resolve();
+            } else {
+              logger.error('Stream error:', error);
+              reject(error);
+            }
+          },
+          complete: () => {
+            logger.info('Stream completed');
+            resolve();
+          },
+        });
+
+        // Also resolve on abort signal
+        signal.addEventListener('abort', () => resolve());
+      });
+
+      // Explicitly exit after stream completion
+      process.exit(0);
+    } catch (error) {
+      logger.error('Failed to start stream:', error);
+      process.exit(1);
+    } finally {
+      process.removeListener('SIGINT', cleanup);
+      process.removeListener('SIGTERM', cleanup);
+    }
   }
 
   private static async handleVersionCommand(): Promise<void> {
