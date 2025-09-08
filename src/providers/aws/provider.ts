@@ -493,7 +493,7 @@ export class DynamoDBImpl<
             });
       }),
       map(() => {
-        this.logger.info?.(`[${this.id}] ${this._tableArn}`);
+        this.logger.debug?.(`[${this.id}] Table ARN: ${this._tableArn}`);
         return this;
       })
     );

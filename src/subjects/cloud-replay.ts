@@ -8,12 +8,15 @@ import {
 } from '../providers';
 import {
   first,
+  from,
   ignoreElements,
   map,
   merge,
   Observable,
+  ObservableInput,
   of,
   ReplaySubject,
+  shareReplay,
   Subscription,
   switchMap,
   tap,
@@ -28,16 +31,17 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   private buffer = new ReplaySubject<Expireable<T>>();
   private emitter = new EventEmitter<{ [K in SubjectEventType]: [T] }>();
   private subscription: Subscription;
+  private provider$: Observable<ICloudProvider<unknown>>;
 
   constructor(
-    private provider$: Observable<ICloudProvider<unknown>>,
+    provider: ObservableInput<ICloudProvider<unknown>>,
     private options?: CloudReplayOptions<T>
   ) {
     super();
+    this.provider$ = from(provider).pipe(first(), shareReplay(1));
 
-    this.subscription = provider$
+    this.subscription = this.provider$
       .pipe(
-        first(),
         switchMap((provider) => {
           const persisted = this.buffer.pipe(
             persist(of(provider), this.options?.hashFn)
@@ -70,7 +74,6 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
 
   public snapshot(filter?: Filter<T>): Observable<T[]> {
     return this.provider$.pipe(
-      first(),
       switchMap((provider) => provider.snapshot<T>(filter || {}))
     );
   }
