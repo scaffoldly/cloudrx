@@ -41,7 +41,10 @@ export interface ICloudProvider<TEvent> {
   unmarshall<T>(event: TEvent): T;
 }
 
+export const DEFAULT_NAMESPACE = 'cloudrx';
+
 export type CloudOptions = {
+  namespace?: string; // Default: DEFAULT_NAMESPACE
   logger?: Logger;
 };
 
@@ -130,11 +133,13 @@ export abstract class CloudProvider<TEvent, TMarker>
     id: string,
     opts?: Options
   ): Observable<Provider> {
-    if (!CloudProvider.instances[id]) {
-      CloudProvider.instances[id] = new this(id, opts).init();
+    const _id = `${opts?.namespace ?? DEFAULT_NAMESPACE}-${id}`;
+
+    if (!CloudProvider.instances[_id]) {
+      CloudProvider.instances[_id] = new this(id, opts).init();
     }
 
-    return CloudProvider.instances[id] as Observable<Provider>;
+    return CloudProvider.instances[_id] as Observable<Provider>;
   }
 
   static abort(reason?: unknown): void {
@@ -157,7 +162,8 @@ export abstract class CloudProvider<TEvent, TMarker>
 
     this._signal.addEventListener('abort', () => {
       this.events.emit('end');
-      delete CloudProvider.instances[this.id];
+      const _id = `${opts?.namespace ?? DEFAULT_NAMESPACE}-${this.id}`;
+      delete CloudProvider.instances[_id];
     });
 
     process.once('beforeExit', () => {
