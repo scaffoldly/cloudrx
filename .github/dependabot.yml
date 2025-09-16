@@ -1,6 +1,16 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/" # Location of package manifests
+  - package-ecosystem: 'npm'
+    directory: '/' # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
+    groups:
+      production:
+        update_types:
+          - major
+          - minor
+          - patch
+      development:
+        update_types:
+          - major
+          - minor
