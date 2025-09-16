@@ -192,45 +192,45 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Note:** Add \`[skip-prerelease]\` to commit message to skip pre-release publishing." >> $GITHUB_STEP_SUMMARY
 
-  merge-prs:
-    runs-on: ubuntu-latest
-    # if:
-    # - success()
-    # - is a pull request
-    # - PR is from dependabot
-    # - PR is open
-    # - PR is assigned to cnuss
-    if: |
-      success() &&
-      github.event_name == 'pull_request_target' &&
-      github.actor == 'dependabot[bot]' &&
-      github.event.pull_request.state == 'open' &&
-      contains(github.event.pull_request.requested_reviewers.*.login, 'cnuss')
-    name: Merge PRs
-    needs: [quality-checks, unit-tests]
-    steps:
-      - name: Request merge
-        uses: actions/github-script@v7
-        env:
-          COMMENT_BOT_TOKEN: ${{ secrets.COMMENT_BOT_TOKEN }}
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const pull_number = context.payload.pull_request.number;
+  # merge-prs:
+  #   runs-on: ubuntu-latest
+  #   # if:
+  #   # - success()
+  #   # - is a pull request
+  #   # - PR is from dependabot
+  #   # - PR is open
+  #   # - PR is assigned to cnuss
+  #   if: |
+  #     success() &&
+  #     github.event_name == 'pull_request_target' &&
+  #     github.actor == 'dependabot[bot]' &&
+  #     github.event.pull_request.state == 'open' &&
+  #     contains(github.event.pull_request.requested_reviewers.*.login, 'cnuss')
+  #   name: Merge PRs
+  #   needs: [quality-checks, unit-tests]
+  #   steps:
+  #     - name: Request merge
+  #       uses: actions/github-script@v7
+  #       env:
+  #         COMMENT_BOT_TOKEN: ${{ secrets.COMMENT_BOT_TOKEN }}
+  #       with:
+  #         script: |
+  #           const { owner, repo } = context.repo;
+  #           const pull_number = context.payload.pull_request.number;
 
-            // Post comment to trigger Claude merge using the token from env
-            const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${pull_number}/comments`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${process.env.COMMENT_BOT_TOKEN}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                body: '@claude Please merge this PR.\n\n_(NOTE: this comment was automatically added by CI)_'
-              })
-            });
+  #           // Post comment to trigger Claude merge using the token from env
+  #           const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${pull_number}/comments`, {
+  #             method: 'POST',
+  #             headers: {
+  #               'Authorization': `Bearer ${process.env.COMMENT_BOT_TOKEN}`,
+  #               'Accept': 'application/vnd.github.v3+json',
+  #               'Content-Type': 'application/json'
+  #             },
+  #             body: JSON.stringify({
+  #               body: '@claude Please merge this PR.\n\n_(NOTE: this comment was automatically added by CI)_'
+  #             })
+  #           });
 
-            if (!response.ok) {
-              throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
-            }
+  #           if (!response.ok) {
+  #             throw new Error(`Failed to create comment: ${response.status} ${response.statusText}`);
+  #           }
