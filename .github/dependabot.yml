@@ -6,11 +6,11 @@ updates:
       interval: 'weekly'
     groups:
       production:
-        update_types:
+        update-types:
           - major
           - minor
           - patch
       development:
-        update_types:
+        update-types:
           - major
           - minor
