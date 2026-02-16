@@ -16,7 +16,6 @@ import {
   RetryError,
   Expireable,
   Filter,
-  DEFAULT_NAMESPACE,
 } from '../base';
 import {
   asyncScheduler,
@@ -112,10 +111,7 @@ export class DynamoDBImpl<
     },
   };
 
-  constructor(
-    id: string,
-    private opts?: DynamoDBOptions<THashKey, TRangeKey>
-  ) {
+  constructor(id: string, opts?: DynamoDBOptions<THashKey, TRangeKey>) {
     super(id, opts);
     this._client = opts?.client || DynamoDBImpl.DEFAULT_CLIENT;
     this._hashKey = opts?.hashKey || ('hashKey' as THashKey);
@@ -130,7 +126,7 @@ export class DynamoDBImpl<
 
   get tableName(): string {
     // TODO: sanitize to be a valid DynamoDB table name
-    return `${this.opts?.namespace ?? DEFAULT_NAMESPACE}-${this.id}`;
+    return `${this.namespace}-${this.id}`;
   }
 
   get tableArn(): string {

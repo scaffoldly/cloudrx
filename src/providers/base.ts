@@ -4,13 +4,16 @@ import {
   combineLatest,
   filter,
   fromEvent,
+  isObservable,
   map,
   Observable,
   observeOn,
   Observer,
+  of,
   OperatorFunction,
   shareReplay,
   Subscription,
+  switchMap,
   take,
   takeUntil,
   tap,
@@ -30,6 +33,7 @@ export type Filter<T> = {
 
 export interface ICloudProvider<TEvent> {
   get id(): string;
+  get namespace(): string;
   get signal(): AbortSignal;
   get logger(): Logger;
 
@@ -44,7 +48,7 @@ export interface ICloudProvider<TEvent> {
 export const DEFAULT_NAMESPACE = 'cloudrx';
 
 export type CloudOptions = {
-  namespace?: string; // Default: DEFAULT_NAMESPACE
+  namespace?: Observable<string> | string; // Default: DEFAULT_NAMESPACE
   logger?: Logger;
 };
 
@@ -112,6 +116,7 @@ export abstract class CloudProvider<TEvent, TMarker>
   private _stream$?: Observable<TEvent[]>;
   private _logger: Logger;
   private _signal: AbortSignal;
+  protected _namespace: string;
 
   private get stream$(): Observable<TEvent[]> {
     if (this._stream$) return this._stream$;
@@ -133,13 +138,25 @@ export abstract class CloudProvider<TEvent, TMarker>
     id: string,
     opts?: Options
   ): Observable<Provider> {
-    const _id = `${opts?.namespace ?? DEFAULT_NAMESPACE}-${id}`;
+    const namespace$ = isObservable(opts?.namespace)
+      ? opts.namespace
+      : of(opts?.namespace ?? DEFAULT_NAMESPACE);
 
-    if (!CloudProvider.instances[_id]) {
-      CloudProvider.instances[_id] = new this(id, opts).init();
-    }
+    return namespace$.pipe(
+      take(1),
+      switchMap((namespace) => {
+        const _id = `${namespace}-${id}`;
 
-    return CloudProvider.instances[_id] as Observable<Provider>;
+        if (!CloudProvider.instances[_id]) {
+          CloudProvider.instances[_id] = new this(id, {
+            ...opts,
+            namespace,
+          } as Options).init();
+        }
+
+        return CloudProvider.instances[_id] as Observable<Provider>;
+      })
+    );
   }
 
   static abort(reason?: unknown): void {
@@ -155,6 +172,9 @@ export abstract class CloudProvider<TEvent, TMarker>
     opts?: CloudOptions
   ) {
     this._logger = opts?.logger ?? CloudProvider.DEFAULT_LOGGER;
+    // Note: from() resolves the namespace observable and passes the string value
+    this._namespace =
+      typeof opts?.namespace === 'string' ? opts.namespace : DEFAULT_NAMESPACE;
 
     const abort = new AbortController();
     CloudProvider.aborts.push(abort);
@@ -162,7 +182,7 @@ export abstract class CloudProvider<TEvent, TMarker>
 
     this._signal.addEventListener('abort', () => {
       this.events.emit('end');
-      const _id = `${opts?.namespace ?? DEFAULT_NAMESPACE}-${this.id}`;
+      const _id = `${this._namespace}-${this.id}`;
       delete CloudProvider.instances[_id];
     });
 
@@ -177,6 +197,10 @@ export abstract class CloudProvider<TEvent, TMarker>
 
   get signal(): AbortSignal {
     return this._signal;
+  }
+
+  get namespace(): string {
+    return this._namespace;
   }
 
   protected abstract _init(): Observable<this>;

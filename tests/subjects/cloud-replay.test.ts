@@ -1,8 +1,10 @@
 import {
+  delay,
   filter,
   firstValueFrom,
   lastValueFrom,
   Observable,
+  of,
   ReplaySubject,
 } from 'rxjs';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
@@ -52,7 +54,6 @@ describe('cloud-replay', () => {
     filter?: Partial<Data>
   ): Promise<void> => {
     const unfiltered = await lastValueFrom(subject.snapshot());
-    console.log('!!! Unfiltered snapshot:', unfiltered);
     const snapshot = await lastValueFrom(subject.snapshot(filter));
 
     if (!filter) {
@@ -69,6 +70,10 @@ describe('cloud-replay', () => {
       expect(snapshot.length).toBe(seedDataFiltered.length);
       seedDataFiltered.forEach((item) => {
         expect(snapshot).toContainEqual(item);
+      });
+      expect(unfiltered.length).toBe(seedData.length);
+      seedData.forEach((item) => {
+        expect(unfiltered).toContainEqual(item);
       });
     }
   };
@@ -183,6 +188,30 @@ describe('cloud-replay', () => {
       await snapshot(seedData, subject);
     });
 
+    test('snapshot-namespaced', async () => {
+      const provider = Memory.from(testId(), {
+        namespace: of('ns-1'),
+      });
+      const seedData = await seed(provider);
+      await snapshot(seedData, new CloudReplaySubject<Data>(provider));
+      const { namespace } = await firstValueFrom(provider).then((p) => ({
+        namespace: p.namespace,
+      }));
+      expect(namespace).toBe('ns-1');
+    });
+
+    test('snapshot-namespaced-delayed', async () => {
+      const provider = Memory.from(testId(), {
+        namespace: of('ns-1').pipe(delay(1000)),
+      });
+      const seedData = await seed(provider);
+      await snapshot(seedData, new CloudReplaySubject<Data>(provider));
+      const { namespace } = await firstValueFrom(provider).then((p) => ({
+        namespace: p.namespace,
+      }));
+      expect(namespace).toBe('ns-1');
+    });
+
     test('snapshot-filter', async () => {
       const provider = Memory.from(testId());
       const seedData = await seed(provider);
@@ -239,6 +268,34 @@ describe('cloud-replay', () => {
       const seedData = await seed(provider);
       const subject = new CloudReplaySubject<Data>(provider);
       await snapshot(seedData, subject);
+    });
+
+    test('snapshot-namespaced', async () => {
+      const provider = DynamoDB.from(testId(), {
+        ...options,
+        namespace: of('ns-1'),
+      });
+      const seedData = await seed(provider);
+      await snapshot(seedData, new CloudReplaySubject<Data>(provider));
+      const { namespace, tableName } = await firstValueFrom(provider).then(
+        (p) => ({ namespace: p.namespace, tableName: p.tableName })
+      );
+      expect(namespace).toBe('ns-1');
+      expect(tableName).toBe(`ns-1-${testId()}`);
+    });
+
+    test('snapshot-namespaced-delayed', async () => {
+      const provider = DynamoDB.from(testId(), {
+        ...options,
+        namespace: of('ns-1').pipe(delay(1000)),
+      });
+      const seedData = await seed(provider);
+      await snapshot(seedData, new CloudReplaySubject<Data>(provider));
+      const { namespace, tableName } = await firstValueFrom(provider).then(
+        (p) => ({ namespace: p.namespace, tableName: p.tableName })
+      );
+      expect(namespace).toBe('ns-1');
+      expect(tableName).toBe(`ns-1-${testId()}`);
     });
 
     test('snapshot-filter', async () => {
