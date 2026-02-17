@@ -184,6 +184,11 @@ export abstract class CloudProvider<TEvent, TMarker>
       this.events.emit('end');
       const _id = `${this._namespace}-${this.id}`;
       delete CloudProvider.instances[_id];
+      // Remove this AbortController from the aborts array to prevent memory leak
+      const index = CloudProvider.aborts.indexOf(abort);
+      if (index !== -1) {
+        CloudProvider.aborts.splice(index, 1);
+      }
     });
 
     process.once('beforeExit', () => {
