@@ -312,7 +312,18 @@ export abstract class CloudProvider<TEvent, TMarker>
 
       const subscription = this.stream$
         .pipe(this.concatAll(this.events))
-        .subscribe();
+        .subscribe({
+          error: (err) => {
+            // Remove handler before propagating error to ensure cleanup
+            this.events.off('expired', handler);
+            subscriber.error(err);
+          },
+          complete: () => {
+            // Remove handler before completing to ensure cleanup
+            this.events.off('expired', handler);
+            subscriber.complete();
+          },
+        });
 
       return () => {
         subscription.unsubscribe();
