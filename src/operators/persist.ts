@@ -5,6 +5,7 @@ import {
   MonoTypeOperatorFunction,
   Observable,
   of,
+  Subscription,
   switchMap,
 } from 'rxjs';
 import { Expireable, ICloudProvider } from '../providers';
@@ -19,8 +20,11 @@ export const persist = <T>(
         buffer: [] as T[],
         ready: false,
         complete: false,
+        disposed: false,
         provider: undefined as ICloudProvider<unknown> | undefined,
       };
+      // Track all store subscriptions for cleanup
+      const storeSubscriptions: Subscription[] = [];
 
       const storeValue = (value: T): Observable<T> => {
         if (!state.provider) {
@@ -47,7 +51,7 @@ export const persist = <T>(
       };
 
       const processValuesSequentially = (values: T[]): void => {
-        if (values.length === 0) {
+        if (state.disposed || values.length === 0) {
           checkCompletion();
           return;
         }
@@ -59,11 +63,20 @@ export const persist = <T>(
           return;
         }
 
-        storeValue(currentValue).subscribe({
-          next: (data) => subscriber.next(data),
-          error: (error) => subscriber.error(error),
+        const sub = storeValue(currentValue).subscribe({
+          next: (data) => {
+            if (!state.disposed) {
+              subscriber.next(data);
+            }
+          },
+          error: (error) => {
+            if (!state.disposed) {
+              subscriber.error(error);
+            }
+          },
           complete: () => processValuesSequentially(remainingValues),
         });
+        storeSubscriptions.push(sub);
       };
 
       const handleProviderReady = (
@@ -75,11 +88,23 @@ export const persist = <T>(
       };
 
       const handleSourceValue = (value: T): void => {
+        if (state.disposed) {
+          return;
+        }
         if (state.ready) {
-          storeValue(value).subscribe({
-            next: (data) => subscriber.next(data),
-            error: (error) => subscriber.error(error),
+          const sub = storeValue(value).subscribe({
+            next: (data) => {
+              if (!state.disposed) {
+                subscriber.next(data);
+              }
+            },
+            error: (error) => {
+              if (!state.disposed) {
+                subscriber.error(error);
+              }
+            },
           });
+          storeSubscriptions.push(sub);
         } else {
           state.buffer.push(value);
         }
@@ -108,8 +133,12 @@ export const persist = <T>(
       });
 
       return () => {
+        state.disposed = true;
         providerSub?.unsubscribe();
         sourceSub.unsubscribe();
+        // Clean up all in-flight store subscriptions
+        storeSubscriptions.forEach((sub) => sub.unsubscribe());
+        storeSubscriptions.length = 0;
       };
     });
   };
