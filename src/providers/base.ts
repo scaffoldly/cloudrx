@@ -67,26 +67,42 @@ export class StreamEvent<TEvent, TMarker> extends EventEmitter<
   StreamEvents<TEvent>
 > {
   private expirations: Map<TMarker, Subscription> = new Map();
+  private disposed = false;
 
   constructor() {
     super({ captureRejections: true });
     this.setMaxListeners(Number.MAX_SAFE_INTEGER);
 
     this.once('end', () => {
-      this.removeAllListeners('expired');
-      this.expirations.forEach((sub) => sub.unsubscribe());
-      this.expirations.clear();
+      this.dispose();
     });
   }
 
+  /**
+   * Clean up all resources. Can be called directly or via 'end' event.
+   * Safe to call multiple times.
+   */
+  dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.removeAllListeners('expired');
+    this.expirations.forEach((sub) => sub.unsubscribe());
+    this.expirations.clear();
+  }
+
   expire(marker: TMarker, event: TEvent, delaySec: number = 0): void {
-    if (this.expirations.has(marker)) {
+    if (this.disposed || this.expirations.has(marker)) {
       return;
     }
 
     this.expirations.set(
       marker,
       asyncScheduler.schedule(() => {
+        if (this.disposed) {
+          return;
+        }
         // TODO: Instead of emitting expired:
         // - Implement remove functionality
         // - Wait for removal event from stream
@@ -94,6 +110,19 @@ export class StreamEvent<TEvent, TMarker> extends EventEmitter<
         this.expirations.delete(marker);
       }, delaySec * 1000)
     );
+  }
+
+  /**
+   * Cancel a specific expiration by marker.
+   */
+  cancelExpiration(marker: TMarker): boolean {
+    const sub = this.expirations.get(marker);
+    if (sub) {
+      sub.unsubscribe();
+      this.expirations.delete(marker);
+      return true;
+    }
+    return false;
   }
 }
 
