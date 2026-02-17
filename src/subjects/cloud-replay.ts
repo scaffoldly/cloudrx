@@ -32,13 +32,18 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   private emitter = new EventEmitter<{ [K in SubjectEventType]: [T] }>();
   private subscription: Subscription;
   private provider$: Observable<ICloudProvider<unknown>>;
+  private disposed = false;
 
   constructor(
     provider: ObservableInput<ICloudProvider<unknown>>,
     private options?: CloudReplayOptions<T>
   ) {
     super();
-    this.provider$ = from(provider).pipe(first(), shareReplay(1));
+    // Use refCount to auto-unsubscribe when no subscribers, preventing memory leak
+    this.provider$ = from(provider).pipe(
+      first(),
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
 
     this.subscription = this.provider$
       .pipe(
@@ -139,7 +144,11 @@ export class CloudReplaySubject<T> extends ReplaySubject<T> {
   }
 
   private _unsubscribe(): void {
-    this.subscription.unsubscribe();
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.subscription?.unsubscribe();
     this.emitter.removeAllListeners();
   }
 
