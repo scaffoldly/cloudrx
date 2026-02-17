@@ -518,6 +518,7 @@ export class DynamoDBImpl<
         shardId: string | undefined;
       }>();
       const subscriptions: Subscription[] = [];
+      let isCleaningUp = false;
 
       subscriptions.push(
         this.shards
@@ -604,14 +605,16 @@ export class DynamoDBImpl<
                 )
               );
 
-              if (NextShardIterator) {
+              if (NextShardIterator && !isCleaningUp) {
                 subscriptions.push(
                   asyncScheduler.schedule(
                     () => {
-                      iterator.next({
-                        iterator: NextShardIterator,
-                        shardId: ShardId,
-                      });
+                      if (!isCleaningUp) {
+                        iterator.next({
+                          iterator: NextShardIterator,
+                          shardId: ShardId,
+                        });
+                      }
                     },
                     !Records.length ? 100 : 0
                   )
@@ -631,8 +634,12 @@ export class DynamoDBImpl<
 
       return () => {
         this.logger.debug?.(`[${this.id}] Stream cleanup`);
-        subscriptions.forEach((sub) => sub.unsubscribe());
+        // Set flag first to prevent new subscriptions from being added
+        isCleaningUp = true;
+        // Complete iterator to stop any pending scheduled tasks from queueing more work
         iterator.complete();
+        // Now safely unsubscribe all subscriptions
+        subscriptions.forEach((sub) => sub.unsubscribe());
       };
     });
   }
