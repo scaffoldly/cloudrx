@@ -209,8 +209,14 @@ export class DynamoDBImpl<
       ),
       filter(({ newShard }) => newShard !== null),
       map(({ newShard }) => newShard!),
-      shareReplay(1)
+      // Use refCount to auto-unsubscribe when no subscribers, preventing memory leak
+      shareReplay({ bufferSize: 1, refCount: true })
     );
+
+    // Clean up the shards cache entry when the provider is aborted
+    this.signal.addEventListener('abort', () => {
+      delete DynamoDBImpl.shards[id];
+    });
 
     return DynamoDBImpl.shards[id];
   }
