@@ -105,12 +105,31 @@
           "**/*.test.ts"
         ],
         "globalSetup": "<rootDir>/tests/setup.ts",
-        "globalTeardown": "<rootDir>/tests/teardown.ts",
+        "setupFilesAfterEnv": ["<rootDir>/tests/env.ts"],
         "collectCoverageFrom": [
           "src/**/*.ts",
           "!src/**/*.d.ts"
         ],
         "coverageDirectory": "coverage"
+      },
+      {
+        "displayName": "spec",
+        "preset": "ts-jest",
+        "transform": {
+          "^.+\\.tsx?$": [
+            "ts-jest",
+            {
+              "tsconfig": "tsconfig.json"
+            }
+          ]
+        },
+        "testEnvironment": "node",
+        "roots": [
+          "<rootDir>/src"
+        ],
+        "testMatch": [
+          "**/*.spec.ts"
+        ]
       }
     ]
   }

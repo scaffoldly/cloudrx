@@ -1,0 +1,1 @@
+export { DynamoDBController } from './DynamoDBController';
