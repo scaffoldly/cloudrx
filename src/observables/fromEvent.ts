@@ -1,5 +1,9 @@
 import { Observable, fromEvent as _fromEvent } from 'rxjs';
-import { Controller, EventType } from '../controllers/Controller';
+import {
+  Controller,
+  ControllerEvent,
+  EventType,
+} from '../controllers/Controller';
 
 /**
  * Strictly typed fromEvent for Controllers.
@@ -13,17 +17,17 @@ import { Controller, EventType } from '../controllers/Controller';
  *
  * // Listen for modifications (INSERT/MODIFY)
  * fromEvent(controller, 'modified').subscribe(event => {
- *   console.log('Modified:', event.newImage);
+ *   console.log('Modified:', event.newValue);
  * });
  *
  * // Listen for removals (manual deletes)
  * fromEvent(controller, 'removed').subscribe(event => {
- *   console.log('Removed:', event.oldImage);
+ *   console.log('Removed:', event.oldValue);
  * });
  *
  * // Listen for expirations (TTL deletes)
  * fromEvent(controller, 'expired').subscribe(event => {
- *   console.log('Expired:', event.oldImage);
+ *   console.log('Expired:', event.oldValue);
  * });
  * ```
  *
@@ -31,7 +35,7 @@ import { Controller, EventType } from '../controllers/Controller';
  * @param eventName The event type: 'modified', 'removed', or 'expired'
  * @returns Observable of events of type T
  */
-export function fromEvent<T>(
+export function fromEvent<T extends ControllerEvent<unknown>>(
   target: Controller<T>,
   eventName: EventType
 ): Observable<T> {

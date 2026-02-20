@@ -3,10 +3,11 @@ import {
   DynamoDBClient,
   PutItemCommand,
   DeleteItemCommand,
+  TableDescription,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBStreamsClient } from '@aws-sdk/client-dynamodb-streams';
 import { marshall } from '@aws-sdk/util-dynamodb';
-import { fromEvent } from 'cloudrx';
+import { fromEvent, Controller } from 'cloudrx';
 import {
   DynamoDBController,
   DynamoDBEvent,
@@ -17,9 +18,9 @@ describe('DynamoDBController Integration', () => {
   let container: DynamoDBLocalContainer;
   let dynamoDBClient: DynamoDBClient;
   let streamsClient: DynamoDBStreamsClient;
-  let controller: DynamoDBController<TestRecord>;
+  let controller: Controller<DynamoDBEvent<TestRecord>>;
   let subscriptions: Subscription[] = [];
-  let tableArn: string;
+  let table: TableDescription;
 
   type TestRecord = {
     id: string;
@@ -33,7 +34,7 @@ describe('DynamoDBController Integration', () => {
   }
 
   // Helper to create a table with streams enabled
-  async function createTable(tableName: string): Promise<string> {
+  async function createTable(tableName: string): Promise<TableDescription> {
     const { CreateTableCommand, DescribeTableCommand } = await import(
       '@aws-sdk/client-dynamodb'
     );
@@ -52,23 +53,23 @@ describe('DynamoDBController Integration', () => {
     );
 
     // Wait for table to be active
-    let tableArn: string | undefined;
+    let tableDescription: TableDescription | undefined;
     for (let i = 0; i < 30; i++) {
       const response = await dynamoDBClient.send(
         new DescribeTableCommand({ TableName: tableName })
       );
       if (response.Table?.TableStatus === 'ACTIVE') {
-        tableArn = response.Table.TableArn;
+        tableDescription = response.Table;
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    if (!tableArn) {
+    if (!tableDescription) {
       throw new Error('Table did not become active');
     }
 
-    return tableArn;
+    return tableDescription;
   }
 
   beforeAll(async () => {
@@ -102,10 +103,10 @@ describe('DynamoDBController Integration', () => {
 
     // Create a fresh table for each test
     const tableName = uniqueTableName();
-    tableArn = await createTable(tableName);
+    table = await createTable(tableName);
 
     // Create controller
-    controller = await DynamoDBController.from<TestRecord>(tableArn, {
+    controller = DynamoDBController.from<TestRecord>(table, {
       dynamoDBClient,
       streamsClient,
       pollInterval: 100, // Fast polling for tests
@@ -119,7 +120,7 @@ describe('DynamoDBController Integration', () => {
 
   describe('event streaming', () => {
     it('emits modified event on INSERT', async () => {
-      const tableName = tableArn.split('/').pop()!;
+      const tableName = table.TableName!;
 
       // Insert a record first to ensure stream has shards
       await dynamoDBClient.send(
@@ -153,15 +154,15 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       expect(events.length).toBeGreaterThanOrEqual(1);
-      const insertEvent = events.find((e) => e.newImage?.id === 'test-1');
+      const insertEvent = events.find((e) => e.newValue?.id === 'test-1');
       expect(insertEvent).toBeDefined();
       expect(insertEvent?.type).toBe('modified');
       expect(insertEvent?.eventName).toBe('INSERT');
-      expect(insertEvent?.newImage?.data).toBe('hello world');
+      expect(insertEvent?.newValue?.data).toBe('hello world');
     });
 
     it('emits modified event on MODIFY', async () => {
-      const tableName = tableArn.split('/').pop()!;
+      const tableName = table.TableName!;
 
       // First insert to create the record and shard
       await dynamoDBClient.send(
@@ -198,12 +199,12 @@ describe('DynamoDBController Integration', () => {
       const modifyEvent = events.find((e) => e.eventName === 'MODIFY');
       expect(modifyEvent).toBeDefined();
       expect(modifyEvent?.type).toBe('modified');
-      expect(modifyEvent?.oldImage?.data).toBe('original');
-      expect(modifyEvent?.newImage?.data).toBe('updated');
+      expect(modifyEvent?.oldValue?.data).toBe('original');
+      expect(modifyEvent?.newValue?.data).toBe('updated');
     });
 
     it('emits removed event on DELETE', async () => {
-      const tableName = tableArn.split('/').pop()!;
+      const tableName = table.TableName!;
 
       // First insert
       await dynamoDBClient.send(
@@ -238,13 +239,13 @@ describe('DynamoDBController Integration', () => {
       const removeEvent = events[0];
       expect(removeEvent?.type).toBe('removed');
       expect(removeEvent?.eventName).toBe('REMOVE');
-      expect(removeEvent?.oldImage?.id).toBe('test-3');
+      expect(removeEvent?.oldValue?.id).toBe('test-3');
     });
   });
 
   describe('observable factory', () => {
     it('from$() creates controller that receives events', async () => {
-      const tableName = tableArn.split('/').pop()!;
+      const tableName = table.TableName!;
 
       // Seed record to create shard
       await dynamoDBClient.send(
@@ -260,7 +261,7 @@ describe('DynamoDBController Integration', () => {
         DynamoDBController as unknown as { instances: Map<string, unknown> }
       ).instances.clear();
 
-      const controller$ = DynamoDBController.from$<TestRecord>(tableArn, {
+      const controller$ = DynamoDBController.from$<TestRecord>(table, {
         dynamoDBClient,
         streamsClient,
         pollInterval: 100,
@@ -290,15 +291,15 @@ describe('DynamoDBController Integration', () => {
       sub.unsubscribe();
       newController.dispose();
 
-      const targetEvent = events.find((e) => e.newImage?.id === 'obs-test');
+      const targetEvent = events.find((e) => e.newValue?.id === 'obs-test');
       expect(targetEvent).toBeDefined();
-      expect(targetEvent?.newImage?.id).toBe('obs-test');
+      expect(targetEvent?.newValue?.id).toBe('obs-test');
     });
   });
 
   describe('multiple subscribers', () => {
     it('delivers events to all subscribers', async () => {
-      const tableName = tableArn.split('/').pop()!;
+      const tableName = table.TableName!;
 
       // Seed record to create shard
       await dynamoDBClient.send(
@@ -335,16 +336,16 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       const events1Filtered = events1.filter(
-        (e) => e.newImage?.id === 'multi-test'
+        (e) => e.newValue?.id === 'multi-test'
       );
       const events2Filtered = events2.filter(
-        (e) => e.newImage?.id === 'multi-test'
+        (e) => e.newValue?.id === 'multi-test'
       );
 
       expect(events1Filtered.length).toBeGreaterThanOrEqual(1);
       expect(events2Filtered.length).toBeGreaterThanOrEqual(1);
-      expect(events1Filtered[0]?.newImage?.id).toBe('multi-test');
-      expect(events2Filtered[0]?.newImage?.id).toBe('multi-test');
+      expect(events1Filtered[0]?.newValue?.id).toBe('multi-test');
+      expect(events2Filtered[0]?.newValue?.id).toBe('multi-test');
     });
   });
 

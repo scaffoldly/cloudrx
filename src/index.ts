@@ -28,6 +28,8 @@ export { Logger, InfoLogger } from './util';
 // Controllers - Event-emitting controllers for cloud services
 export {
   Controller,
+  ControllerEvent,
+  ControllerOptions,
   EventType,
   EventListener,
   DynamoDBController,

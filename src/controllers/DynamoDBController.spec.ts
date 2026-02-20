@@ -1,12 +1,13 @@
 /* global describe, it, beforeEach, afterEach, expect, jest */
 import { Subscription } from 'rxjs';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, TableDescription } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBStreamsClient,
   _Record,
 } from '@aws-sdk/client-dynamodb-streams';
 import { fromEvent } from '../observables/fromEvent';
 import { Abortable } from '../util/abortable';
+import { Controller } from './Controller';
 import {
   DynamoDBController,
   DynamoDBEvent,
@@ -17,6 +18,17 @@ import {
 const mockSend = jest.fn();
 const mockDynamoDBClient = { send: mockSend };
 const mockStreamsClient = { send: mockSend };
+
+// Helper to create mock TableDescription
+function createMockTableDescription(
+  tableArn = 'arn:aws:dynamodb:us-east-1:123456789:table/test-table'
+): TableDescription {
+  return {
+    TableArn: tableArn,
+    TableName: tableArn.split('/').pop(),
+    LatestStreamArn: `${tableArn}/stream/2024-01-01T00:00:00.000`,
+  };
+}
 
 // Helper to create mock stream records
 function createMockRecord(
@@ -57,23 +69,14 @@ function clearInstanceCache(): void {
 }
 
 // Helper to create a controller with mocked clients
-async function createMockController<T = unknown>(
+function createMockController<T = unknown>(
   tableArn = 'arn:aws:dynamodb:us-east-1:123456789:table/test-table',
   options: Partial<DynamoDBControllerOptions> = {}
-): Promise<DynamoDBController<T>> {
-  // Mock DescribeTable response
+): Controller<DynamoDBEvent<T>> {
+  // Mock DescribeStreamCommand response
   mockSend.mockImplementation((command: unknown) => {
     const commandName = (command as { constructor: { name: string } })
       .constructor.name;
-
-    if (commandName === 'DescribeTableCommand') {
-      return Promise.resolve({
-        Table: {
-          TableArn: tableArn,
-          LatestStreamArn: `${tableArn}/stream/2024-01-01T00:00:00.000`,
-        },
-      });
-    }
 
     if (commandName === 'DescribeStreamCommand') {
       return Promise.resolve({
@@ -93,11 +96,12 @@ async function createMockController<T = unknown>(
     ...options,
   };
 
-  return DynamoDBController.from<T>(tableArn, controllerOptions);
+  const table = createMockTableDescription(tableArn);
+  return DynamoDBController.from<T>(table, controllerOptions);
 }
 
 describe('DynamoDBController', () => {
-  let controller: DynamoDBController<Record<string, unknown>>;
+  let controller: Controller<DynamoDBEvent<Record<string, unknown>>>;
   let subscriptions: Subscription[] = [];
 
   beforeEach(() => {
@@ -115,8 +119,8 @@ describe('DynamoDBController', () => {
     it('returns same instance for same table ARN', async () => {
       const tableArn =
         'arn:aws:dynamodb:us-east-1:123456789:table/singleton-test';
-      controller = await createMockController(tableArn);
-      const controller2 = await createMockController(tableArn);
+      controller = createMockController(tableArn);
+      const controller2 = createMockController(tableArn);
 
       expect(controller).toBe(controller2);
     });
@@ -125,8 +129,8 @@ describe('DynamoDBController', () => {
       const tableArn1 = 'arn:aws:dynamodb:us-east-1:123456789:table/table1';
       const tableArn2 = 'arn:aws:dynamodb:us-east-1:123456789:table/table2';
 
-      controller = await createMockController(tableArn1);
-      const controller2 = await createMockController(tableArn2);
+      controller = createMockController(tableArn1);
+      const controller2 = createMockController(tableArn2);
 
       expect(controller).not.toBe(controller2);
       controller2.dispose();
@@ -135,12 +139,11 @@ describe('DynamoDBController', () => {
     it('removes instance from cache on dispose', async () => {
       const tableArn =
         'arn:aws:dynamodb:us-east-1:123456789:table/dispose-test';
-      controller =
-        await createMockController<Record<string, unknown>>(tableArn);
+      controller = createMockController<Record<string, unknown>>(tableArn);
       controller.dispose();
 
       const controller2 =
-        await createMockController<Record<string, unknown>>(tableArn);
+        createMockController<Record<string, unknown>>(tableArn);
       expect(controller).not.toBe(controller2);
       controller = controller2;
     });
@@ -148,7 +151,7 @@ describe('DynamoDBController', () => {
 
   describe('event classification', () => {
     it('classifies INSERT as modified', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const record = createMockRecord('INSERT', {
         newImage: { id: { S: 'test' }, data: { S: 'value' } },
       });
@@ -166,7 +169,7 @@ describe('DynamoDBController', () => {
     });
 
     it('classifies MODIFY as modified', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const record = createMockRecord('MODIFY', {
         oldImage: { id: { S: 'test' }, data: { S: 'old' } },
         newImage: { id: { S: 'test' }, data: { S: 'new' } },
@@ -184,7 +187,7 @@ describe('DynamoDBController', () => {
     });
 
     it('classifies REMOVE without TTL as removed', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const record = createMockRecord('REMOVE', {
         oldImage: { id: { S: 'test' }, data: { S: 'value' } },
       });
@@ -201,7 +204,7 @@ describe('DynamoDBController', () => {
     });
 
     it('classifies REMOVE with expired TTL as expired', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const pastTime = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
       const record = createMockRecord('REMOVE', {
         oldImage: { id: { S: 'test' }, expires: { N: String(pastTime) } },
@@ -219,7 +222,7 @@ describe('DynamoDBController', () => {
     });
 
     it('classifies REMOVE with future TTL as removed', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const futureTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
       const record = createMockRecord('REMOVE', {
         oldImage: { id: { S: 'test' }, expires: { N: String(futureTime) } },
@@ -237,7 +240,7 @@ describe('DynamoDBController', () => {
     });
 
     it('respects custom TTL attribute name', async () => {
-      controller = await createMockController(undefined, {
+      controller = createMockController(undefined, {
         ttlAttribute: 'expiresAt',
       });
       const pastTime = Math.floor(Date.now() / 1000) - 3600;
@@ -257,7 +260,7 @@ describe('DynamoDBController', () => {
     });
 
     it('treats all REMOVE as removed when ttlAttribute is null', async () => {
-      controller = await createMockController(undefined, {
+      controller = createMockController(undefined, {
         ttlAttribute: null,
       });
       const pastTime = Math.floor(Date.now() / 1000) - 3600;
@@ -279,7 +282,7 @@ describe('DynamoDBController', () => {
 
   describe('fromEvent integration', () => {
     it('can subscribe to modified events', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const events: DynamoDBEvent<unknown>[] = [];
 
       const sub = fromEvent(controller, 'modified').subscribe((event) => {
@@ -292,7 +295,7 @@ describe('DynamoDBController', () => {
     });
 
     it('can subscribe to removed events', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const events: DynamoDBEvent<unknown>[] = [];
 
       const sub = fromEvent(controller, 'removed').subscribe((event) => {
@@ -304,7 +307,7 @@ describe('DynamoDBController', () => {
     });
 
     it('can subscribe to expired events', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const events: DynamoDBEvent<unknown>[] = [];
 
       const sub = fromEvent(controller, 'expired').subscribe((event) => {
@@ -316,7 +319,7 @@ describe('DynamoDBController', () => {
     });
 
     it('supports multiple listeners on same event type', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const events1: DynamoDBEvent<unknown>[] = [];
       const events2: DynamoDBEvent<unknown>[] = [];
 
@@ -335,7 +338,7 @@ describe('DynamoDBController', () => {
 
   describe('lifecycle management', () => {
     it('integrates with Abortable tree', async () => {
-      controller = await createMockController();
+      controller = createMockController();
 
       const tree = Abortable.root.tree;
       const controllerNode = tree.children.find((c) =>
@@ -347,21 +350,21 @@ describe('DynamoDBController', () => {
     });
 
     it('exposes signal for external cancellation', async () => {
-      controller = await createMockController();
+      controller = createMockController();
 
       expect(controller.signal).toBeInstanceOf(AbortSignal);
       expect(controller.signal.aborted).toBe(false);
     });
 
-    it('exposes table ARN', async () => {
+    it('exposes controller id (table ARN)', async () => {
       const tableArn = 'arn:aws:dynamodb:us-east-1:123456789:table/arn-test';
-      controller = await createMockController(tableArn);
+      controller = createMockController(tableArn);
 
-      expect(controller.arn).toBe(tableArn);
+      expect(controller.id).toBe(tableArn);
     });
 
     it('closes subscriptions on dispose', async () => {
-      controller = await createMockController();
+      controller = createMockController();
 
       const sub = fromEvent(controller, 'modified').subscribe();
       subscriptions.push(sub);
@@ -380,15 +383,15 @@ describe('DynamoDBController', () => {
       expect(sub.closed).toBe(true);
     });
 
-    it('chains external abort signal', async () => {
-      const externalController = new AbortController();
-      controller = await createMockController(undefined, {
-        signal: externalController.signal,
+    it('chains external abortable', async () => {
+      const externalAbortable = Abortable.root.fork('external-test');
+      controller = createMockController(undefined, {
+        abortable: externalAbortable,
       });
 
       expect(controller.signal.aborted).toBe(false);
 
-      externalController.abort();
+      externalAbortable.dispose();
 
       // Allow async propagation
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -396,11 +399,76 @@ describe('DynamoDBController', () => {
       // Controller should be disposed
       expect(controller.signal.aborted).toBe(true);
     });
+
+    it('controller appears in parent abortable tree', () => {
+      const parentAbortable = Abortable.root.fork('parent-tree-test');
+      controller = createMockController(undefined, {
+        abortable: parentAbortable,
+      });
+
+      const tree = parentAbortable.tree;
+      expect(tree.children.length).toBe(1);
+      expect(tree.children[0]?.name).toContain('DynamoDBController:');
+    });
+
+    it('dispose is idempotent (can be called multiple times)', () => {
+      controller = createMockController();
+
+      expect(controller.signal.aborted).toBe(false);
+
+      // Call dispose multiple times - should not throw
+      controller.dispose();
+      controller.dispose();
+      controller.dispose();
+
+      expect(controller.signal.aborted).toBe(true);
+    });
+
+    it('disposes controller when nested parent chain is disposed', async () => {
+      const grandparent = Abortable.root.fork('grandparent');
+      const parent = grandparent.fork('parent');
+      controller = createMockController(undefined, {
+        abortable: parent,
+      });
+
+      expect(controller.signal.aborted).toBe(false);
+
+      // Dispose grandparent - should cascade to controller
+      grandparent.dispose();
+
+      // Allow async propagation
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(controller.signal.aborted).toBe(true);
+    });
+
+    it('removes from singleton cache when disposed via parent', async () => {
+      const tableArn =
+        'arn:aws:dynamodb:us-east-1:123456789:table/cache-dispose-test';
+      const parentAbortable = Abortable.root.fork('cache-parent');
+
+      controller = createMockController(tableArn, {
+        abortable: parentAbortable,
+      });
+
+      // Controller should be cached
+      const sameController = createMockController(tableArn);
+      expect(sameController).toBe(controller);
+
+      // Dispose via parent
+      parentAbortable.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should get new instance now
+      const newController = createMockController(tableArn);
+      expect(newController).not.toBe(controller);
+      newController.dispose();
+    });
   });
 
   describe('track() method', () => {
     it('wraps observables with controller lifecycle', async () => {
-      controller = await createMockController();
+      controller = createMockController();
       const { of } = await import('rxjs');
 
       const source$ = of(1, 2, 3);
@@ -420,16 +488,6 @@ describe('DynamoDBController', () => {
         const commandName = (command as { constructor: { name: string } })
           .constructor.name;
 
-        if (commandName === 'DescribeTableCommand') {
-          return Promise.resolve({
-            Table: {
-              TableArn: 'arn:aws:dynamodb:us-east-1:123456789:table/obs-test',
-              LatestStreamArn:
-                'arn:aws:dynamodb:us-east-1:123456789:table/obs-test/stream/2024-01-01T00:00:00.000',
-            },
-          });
-        }
-
         if (commandName === 'DescribeStreamCommand') {
           return Promise.resolve({
             StreamDescription: { Shards: [] },
@@ -439,23 +497,24 @@ describe('DynamoDBController', () => {
         return Promise.resolve({});
       });
 
+      const table = createMockTableDescription(
+        'arn:aws:dynamodb:us-east-1:123456789:table/obs-test'
+      );
+
       const controllerOptions: DynamoDBControllerOptions = {
         dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
         streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
       };
 
-      const controller$ = DynamoDBController.from$(
-        'arn:aws:dynamodb:us-east-1:123456789:table/obs-test',
-        controllerOptions
-      );
+      const controller$ = DynamoDBController.from$(table, controllerOptions);
 
-      const emittedController = await new Promise<DynamoDBController>(
-        (resolve) => {
-          controller$.subscribe((c) => {
-            resolve(c);
-          });
-        }
-      );
+      const emittedController = await new Promise<
+        Controller<DynamoDBEvent<unknown>>
+      >((resolve) => {
+        controller$.subscribe((c) => {
+          resolve(c);
+        });
+      });
 
       expect(emittedController).toBeInstanceOf(DynamoDBController);
       emittedController.dispose();

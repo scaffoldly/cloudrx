@@ -1,4 +1,10 @@
-export { Controller, EventType, EventListener } from './Controller';
+export {
+  Controller,
+  ControllerEvent,
+  ControllerOptions,
+  EventType,
+  EventListener,
+} from './Controller';
 export {
   DynamoDBController,
   DynamoDBControllerOptions,
