@@ -5,14 +5,14 @@ import {
   DynamoDBStreamsClient,
   _Record,
 } from '@aws-sdk/client-dynamodb-streams';
-import { fromEvent } from '../observables/fromEvent';
-import { Abortable } from '../util/abortable';
-import { Controller } from './Controller';
+import { fromEvent } from '../../observables/fromEvent';
+import { Abortable } from '../../util/abortable';
+import { Controller } from '../Controller';
 import {
   DynamoDBController,
   DynamoDBEvent,
   DynamoDBControllerOptions,
-} from './DynamoDBController';
+} from './dynamodb';
 
 // Mock AWS SDK
 const mockSend = jest.fn();

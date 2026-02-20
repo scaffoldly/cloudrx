@@ -9,4 +9,4 @@ export {
   DynamoDBController,
   DynamoDBControllerOptions,
   DynamoDBEvent,
-} from './DynamoDBController';
+} from './aws/dynamodb';

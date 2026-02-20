@@ -11,7 +11,7 @@ import { fromEvent, Controller } from 'cloudrx';
 import {
   DynamoDBController,
   DynamoDBEvent,
-} from '../../src/controllers/DynamoDBController';
+} from '../../src/controllers/aws/dynamodb';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 
 describe('DynamoDBController Integration', () => {
