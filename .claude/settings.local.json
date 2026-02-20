@@ -16,7 +16,8 @@
       "NotebookRead",
       "NotebookEdit",
       "Bash",
-      "mcp__*"
+      "mcp__*",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": []
   }

@@ -15,8 +15,7 @@ export class DynamoDBLocalContainer {
 
   constructor() {
     this.logger = CloudProvider.DEFAULT_LOGGER || console;
-    // TODO: Get ddb-local@3 working
-    this.container = new GenericContainer('amazon/dynamodb-local:2.6.1')
+    this.container = new GenericContainer('amazon/dynamodb-local:latest')
       .withPullPolicy(PullPolicy.alwaysPull())
       .withExposedPorts(8000)
       .withCommand(['-jar', 'DynamoDBLocal.jar', '-inMemory', '-sharedDb']);

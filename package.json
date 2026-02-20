@@ -24,7 +24,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "jest": "NODE_OPTIONS='--experimental-vm-modules --trace-warnings' jest",
-    "test": "npm run jest -- --testTimeout=30000"
+    "test": "npm run jest -- --testTimeout=30000",
+    "test:integration": "npm run jest -- --testTimeout=60000 --selectProjects integration"
   },
   "keywords": [
     "rxjs",
@@ -104,13 +105,57 @@
         "testMatch": [
           "**/*.test.ts"
         ],
+        "testPathIgnorePatterns": [
+          "\\.integration\\.test\\.ts$"
+        ],
         "globalSetup": "<rootDir>/tests/setup.ts",
-        "globalTeardown": "<rootDir>/tests/teardown.ts",
         "collectCoverageFrom": [
           "src/**/*.ts",
           "!src/**/*.d.ts"
         ],
         "coverageDirectory": "coverage"
+      },
+      {
+        "displayName": "integration",
+        "preset": "ts-jest",
+        "transform": {
+          "^.+\\.tsx?$": [
+            "ts-jest",
+            {
+              "tsconfig": "tests/tsconfig.json"
+            }
+          ]
+        },
+        "moduleNameMapper": {
+          "^cloudrx$": "<rootDir>/src/index.ts"
+        },
+        "testEnvironment": "node",
+        "roots": [
+          "<rootDir>/tests"
+        ],
+        "testMatch": [
+          "**/*.integration.test.ts"
+        ],
+        "globalSetup": "<rootDir>/tests/setup.ts"
+      },
+      {
+        "displayName": "spec",
+        "preset": "ts-jest",
+        "transform": {
+          "^.+\\.tsx?$": [
+            "ts-jest",
+            {
+              "tsconfig": "tsconfig.json"
+            }
+          ]
+        },
+        "testEnvironment": "node",
+        "roots": [
+          "<rootDir>/src"
+        ],
+        "testMatch": [
+          "**/*.spec.ts"
+        ]
       }
     ]
   }
