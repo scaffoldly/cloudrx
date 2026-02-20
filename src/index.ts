@@ -24,3 +24,16 @@ export { CloudReplaySubject } from './subjects';
 
 // Utilities - Helper types and functions
 export { Logger, InfoLogger } from './util';
+
+// Controllers - Event-emitting controllers for cloud services
+export {
+  Controller,
+  EventType,
+  EventListener,
+  DynamoDBController,
+  DynamoDBControllerOptions,
+  DynamoDBEvent,
+} from './controllers';
+
+// Observables - RxJS observable helpers
+export { fromEvent } from './observables';

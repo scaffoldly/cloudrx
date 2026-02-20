@@ -1,3 +1,4 @@
+/* global describe, it, beforeEach, afterEach, expect */
 import { Subject, interval, of, toArray } from 'rxjs';
 import { Abortable } from './abortable';
 

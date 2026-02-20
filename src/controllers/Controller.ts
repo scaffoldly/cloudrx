@@ -27,9 +27,8 @@ export abstract class Controller<E> implements HasEventTargetAddRemove<E> {
   addEventListener(
     type: EventType,
     listener: EventListener<E>,
-    options?: boolean | AddEventListenerOptions
+    _options?: boolean | AddEventListenerOptions
   ): void {
-    // TODO what to do with options
     const sub = this.on(type, listener);
     this.subscriptions.set(listener, { sub, type });
   }
@@ -37,9 +36,8 @@ export abstract class Controller<E> implements HasEventTargetAddRemove<E> {
   removeEventListener(
     type: EventType,
     listener: EventListener<E>,
-    options?: EventListenerOptions | boolean
+    _options?: EventListenerOptions | boolean
   ): void {
-    // TODO what to do with options
     const subscription = this.subscriptions.get(listener);
     if (!subscription || subscription.type !== type) return;
     this.off(subscription.sub).subscribe(() => {
