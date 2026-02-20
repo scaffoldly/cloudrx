@@ -156,9 +156,18 @@ describe('DynamoDBController Integration', () => {
       expect(events.length).toBeGreaterThanOrEqual(1);
       const insertEvent = events.find((e) => e.newValue?.id === 'test-1');
       expect(insertEvent).toBeDefined();
-      expect(insertEvent?.type).toBe('modified');
-      expect(insertEvent?.eventName).toBe('INSERT');
-      expect(insertEvent?.newValue?.data).toBe('hello world');
+
+      // Verify exact event content matches what was inserted
+      expect(insertEvent!.type).toBe('modified');
+      expect(insertEvent!.eventName).toBe('INSERT');
+      expect(insertEvent!.newValue).toEqual({
+        id: 'test-1',
+        data: 'hello world',
+      });
+      expect(insertEvent!.oldValue).toBeUndefined();
+      expect(insertEvent!.keys).toEqual({ id: 'test-1' });
+      expect(insertEvent!.timestamp).toBeInstanceOf(Date);
+      expect(typeof insertEvent!.sequenceNumber).toBe('string');
     });
 
     it('emits modified event on MODIFY', async () => {
@@ -198,9 +207,15 @@ describe('DynamoDBController Integration', () => {
 
       const modifyEvent = events.find((e) => e.eventName === 'MODIFY');
       expect(modifyEvent).toBeDefined();
-      expect(modifyEvent?.type).toBe('modified');
-      expect(modifyEvent?.oldValue?.data).toBe('original');
-      expect(modifyEvent?.newValue?.data).toBe('updated');
+
+      // Verify exact event content matches the modification
+      expect(modifyEvent!.type).toBe('modified');
+      expect(modifyEvent!.eventName).toBe('MODIFY');
+      expect(modifyEvent!.oldValue).toEqual({ id: 'test-2', data: 'original' });
+      expect(modifyEvent!.newValue).toEqual({ id: 'test-2', data: 'updated' });
+      expect(modifyEvent!.keys).toEqual({ id: 'test-2' });
+      expect(modifyEvent!.timestamp).toBeInstanceOf(Date);
+      expect(typeof modifyEvent!.sequenceNumber).toBe('string');
     });
 
     it('emits removed event on DELETE', async () => {
@@ -236,10 +251,20 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       expect(events.length).toBeGreaterThanOrEqual(1);
-      const removeEvent = events[0];
-      expect(removeEvent?.type).toBe('removed');
-      expect(removeEvent?.eventName).toBe('REMOVE');
-      expect(removeEvent?.oldValue?.id).toBe('test-3');
+      const removeEvent = events.find((e) => e.oldValue?.id === 'test-3');
+      expect(removeEvent).toBeDefined();
+
+      // Verify exact event content matches the deleted record
+      expect(removeEvent!.type).toBe('removed');
+      expect(removeEvent!.eventName).toBe('REMOVE');
+      expect(removeEvent!.oldValue).toEqual({
+        id: 'test-3',
+        data: 'to-delete',
+      });
+      expect(removeEvent!.newValue).toBeUndefined();
+      expect(removeEvent!.keys).toEqual({ id: 'test-3' });
+      expect(removeEvent!.timestamp).toBeInstanceOf(Date);
+      expect(typeof removeEvent!.sequenceNumber).toBe('string');
     });
   });
 
@@ -293,7 +318,15 @@ describe('DynamoDBController Integration', () => {
 
       const targetEvent = events.find((e) => e.newValue?.id === 'obs-test');
       expect(targetEvent).toBeDefined();
-      expect(targetEvent?.newValue?.id).toBe('obs-test');
+
+      // Verify exact event content
+      expect(targetEvent!.type).toBe('modified');
+      expect(targetEvent!.eventName).toBe('INSERT');
+      expect(targetEvent!.newValue).toEqual({
+        id: 'obs-test',
+        data: 'from observable',
+      });
+      expect(targetEvent!.oldValue).toBeUndefined();
     });
   });
 
@@ -344,8 +377,21 @@ describe('DynamoDBController Integration', () => {
 
       expect(events1Filtered.length).toBeGreaterThanOrEqual(1);
       expect(events2Filtered.length).toBeGreaterThanOrEqual(1);
-      expect(events1Filtered[0]?.newValue?.id).toBe('multi-test');
-      expect(events2Filtered[0]?.newValue?.id).toBe('multi-test');
+
+      // Verify both subscribers received the exact same event content
+      const event1 = events1Filtered[0]!;
+      const event2 = events2Filtered[0]!;
+
+      expect(event1.type).toBe('modified');
+      expect(event1.eventName).toBe('INSERT');
+      expect(event1.newValue).toEqual({ id: 'multi-test', data: 'shared' });
+
+      expect(event2.type).toBe('modified');
+      expect(event2.eventName).toBe('INSERT');
+      expect(event2.newValue).toEqual({ id: 'multi-test', data: 'shared' });
+
+      // Both subscribers should have received the same sequence number
+      expect(event1.sequenceNumber).toBe(event2.sequenceNumber);
     });
   });
 
