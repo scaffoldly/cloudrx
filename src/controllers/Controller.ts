@@ -98,17 +98,25 @@ export abstract class Controller<E extends ControllerEvent<unknown>>
   }
 
   /**
-   * Start producing events (called when first listener subscribes)
+   * Start producing events (called when first listener subscribes).
+   * May be called multiple times over the controller's lifetime as
+   * listeners subscribe after periods of inactivity.
    */
   protected abstract start(): void;
 
   /**
-   * Stop producing events (called when last listener unsubscribes)
+   * Stop producing events (called when last listener unsubscribes).
+   * May be called multiple times over the controller's lifetime.
+   * The controller remains alive and cached - new listeners can
+   * trigger start() again. Use onDispose() for final cleanup.
    */
   protected abstract stop(): void;
 
   /**
-   * Subclass-specific cleanup (called during dispose)
+   * Subclass-specific final cleanup (called once during dispose).
+   * Use this for cleanup that should only happen when the controller
+   * is permanently disposed (e.g., removing from singleton cache).
+   * Unlike stop(), this is called exactly once.
    */
   protected abstract onDispose(): void;
 
