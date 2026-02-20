@@ -520,4 +520,305 @@ describe('DynamoDBController', () => {
       emittedController.dispose();
     });
   });
+
+  describe('shard lifecycle', () => {
+    it('discovers and polls new shards', async () => {
+      const events: DynamoDBEvent<unknown>[] = [];
+      let describeCallCount = 0;
+
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+
+        if (commandName === 'DescribeStreamCommand') {
+          describeCallCount++;
+          return Promise.resolve({
+            StreamDescription: {
+              Shards: [{ ShardId: 'shard-001' }],
+            },
+          });
+        }
+
+        if (commandName === 'GetShardIteratorCommand') {
+          return Promise.resolve({
+            ShardIterator: 'iterator-001',
+          });
+        }
+
+        if (commandName === 'GetRecordsCommand') {
+          return Promise.resolve({
+            Records: [
+              createMockRecord('INSERT', {
+                sequenceNumber: '100',
+                newImage: { id: { S: 'test-1' }, data: { S: 'hello' } },
+              }),
+            ],
+            NextShardIterator: 'iterator-002',
+          });
+        }
+
+        return Promise.resolve({});
+      });
+
+      const table = createMockTableDescription();
+      controller = DynamoDBController.from(table, {
+        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
+        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
+        pollInterval: 50,
+      });
+
+      const sub = fromEvent(controller, 'modified').subscribe((e) =>
+        events.push(e)
+      );
+      subscriptions.push(sub);
+
+      // Wait for shard discovery and polling
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(describeCallCount).toBeGreaterThan(0);
+      expect(events.length).toBeGreaterThan(0);
+      expect(events[0]?.newValue).toEqual({ id: 'test-1', data: 'hello' });
+    });
+
+    it('cleans up completed shards when NextShardIterator is null', async () => {
+      let getRecordsCallCount = 0;
+
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+
+        if (commandName === 'DescribeStreamCommand') {
+          return Promise.resolve({
+            StreamDescription: {
+              Shards: [{ ShardId: 'shard-completing' }],
+            },
+          });
+        }
+
+        if (commandName === 'GetShardIteratorCommand') {
+          return Promise.resolve({
+            ShardIterator: 'iterator-completing',
+          });
+        }
+
+        if (commandName === 'GetRecordsCommand') {
+          getRecordsCallCount++;
+          // First call returns records, second call returns null iterator (shard closed)
+          if (getRecordsCallCount === 1) {
+            return Promise.resolve({
+              Records: [
+                createMockRecord('INSERT', {
+                  sequenceNumber: '200',
+                  newImage: { id: { S: 'final' } },
+                }),
+              ],
+              NextShardIterator: 'iterator-next',
+            });
+          }
+          // Shard is closed
+          return Promise.resolve({
+            Records: [],
+            NextShardIterator: null,
+          });
+        }
+
+        return Promise.resolve({});
+      });
+
+      const table = createMockTableDescription();
+      controller = DynamoDBController.from(table, {
+        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
+        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
+        pollInterval: 50,
+      });
+
+      const events: DynamoDBEvent<unknown>[] = [];
+      const sub = fromEvent(controller, 'modified').subscribe((e) =>
+        events.push(e)
+      );
+      subscriptions.push(sub);
+
+      // Wait for shard to complete
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Should have received the event before shard closed
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      // GetRecords should have been called at least twice (once with data, once returning null)
+      expect(getRecordsCallCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it('discovers new shards that appear after initial discovery', async () => {
+      let describeCallCount = 0;
+      const events: DynamoDBEvent<unknown>[] = [];
+
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+
+        if (commandName === 'DescribeStreamCommand') {
+          describeCallCount++;
+          // First call returns shard-001, later calls also include shard-002
+          const shards =
+            describeCallCount >= 3
+              ? [{ ShardId: 'shard-001' }, { ShardId: 'shard-002' }]
+              : [{ ShardId: 'shard-001' }];
+          return Promise.resolve({
+            StreamDescription: { Shards: shards },
+          });
+        }
+
+        if (commandName === 'GetShardIteratorCommand') {
+          const shardId = (command as { input: { ShardId: string } }).input
+            .ShardId;
+          return Promise.resolve({
+            ShardIterator: `iterator-${shardId}`,
+          });
+        }
+
+        if (commandName === 'GetRecordsCommand') {
+          const iterator = (command as { input: { ShardIterator: string } })
+            .input.ShardIterator;
+          const shardId = iterator.replace('iterator-', '');
+          return Promise.resolve({
+            Records: [
+              createMockRecord('INSERT', {
+                sequenceNumber: `seq-${shardId}-${Date.now()}`,
+                newImage: { id: { S: shardId }, source: { S: shardId } },
+              }),
+            ],
+            NextShardIterator: iterator,
+          });
+        }
+
+        return Promise.resolve({});
+      });
+
+      const table = createMockTableDescription();
+      controller = DynamoDBController.from(table, {
+        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
+        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
+        pollInterval: 50,
+      });
+
+      const sub = fromEvent(controller, 'modified').subscribe((e) =>
+        events.push(e)
+      );
+      subscriptions.push(sub);
+
+      // Wait for multiple discovery cycles
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      // Should have received events from both shards
+      const shard1Events = events.filter(
+        (e) => (e.newValue as { source?: string })?.source === 'shard-001'
+      );
+      const shard2Events = events.filter(
+        (e) => (e.newValue as { source?: string })?.source === 'shard-002'
+      );
+
+      expect(shard1Events.length).toBeGreaterThan(0);
+      expect(shard2Events.length).toBeGreaterThan(0);
+    });
+
+    it('handles shard churn - old shards complete while new ones appear', async () => {
+      let describeCallCount = 0;
+      let shard1RecordCalls = 0;
+      const events: DynamoDBEvent<unknown>[] = [];
+
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+
+        if (commandName === 'DescribeStreamCommand') {
+          describeCallCount++;
+          // Shard-001 disappears after call 3, shard-002 appears at call 2
+          let shards: { ShardId: string }[] = [];
+          if (describeCallCount <= 3) {
+            shards.push({ ShardId: 'shard-001' });
+          }
+          if (describeCallCount >= 2) {
+            shards.push({ ShardId: 'shard-002' });
+          }
+          return Promise.resolve({
+            StreamDescription: { Shards: shards },
+          });
+        }
+
+        if (commandName === 'GetShardIteratorCommand') {
+          const shardId = (command as { input: { ShardId: string } }).input
+            .ShardId;
+          return Promise.resolve({
+            ShardIterator: `iterator-${shardId}`,
+          });
+        }
+
+        if (commandName === 'GetRecordsCommand') {
+          const iterator = (command as { input: { ShardIterator: string } })
+            .input.ShardIterator;
+
+          if (iterator.includes('shard-001')) {
+            shard1RecordCalls++;
+            // Shard-001 closes after 2 record calls
+            if (shard1RecordCalls >= 2) {
+              return Promise.resolve({
+                Records: [],
+                NextShardIterator: null, // Shard closed
+              });
+            }
+            return Promise.resolve({
+              Records: [
+                createMockRecord('INSERT', {
+                  sequenceNumber: `seq-001-${shard1RecordCalls}`,
+                  newImage: { id: { S: 'from-shard-001' } },
+                }),
+              ],
+              NextShardIterator: iterator,
+            });
+          }
+
+          // Shard-002 keeps running
+          return Promise.resolve({
+            Records: [
+              createMockRecord('INSERT', {
+                sequenceNumber: `seq-002-${Date.now()}`,
+                newImage: { id: { S: 'from-shard-002' } },
+              }),
+            ],
+            NextShardIterator: iterator,
+          });
+        }
+
+        return Promise.resolve({});
+      });
+
+      const table = createMockTableDescription();
+      controller = DynamoDBController.from(table, {
+        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
+        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
+        pollInterval: 50,
+      });
+
+      const sub = fromEvent(controller, 'modified').subscribe((e) =>
+        events.push(e)
+      );
+      subscriptions.push(sub);
+
+      // Wait for shard churn to happen
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const shard1Events = events.filter(
+        (e) => (e.newValue as { id?: string })?.id === 'from-shard-001'
+      );
+      const shard2Events = events.filter(
+        (e) => (e.newValue as { id?: string })?.id === 'from-shard-002'
+      );
+
+      // Should have events from shard-001 before it closed
+      expect(shard1Events.length).toBeGreaterThan(0);
+      // Should have events from shard-002 which took over
+      expect(shard2Events.length).toBeGreaterThan(0);
+      // Shard-001 should have closed (only 1 event before closing)
+      expect(shard1Events.length).toBeLessThanOrEqual(2);
+    });
+  });
 });
