@@ -19,12 +19,7 @@ import {
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import {
-  Controller,
-  ControllerEvent,
-  ControllerOptions,
-  EventType,
-} from '..';
+import { Controller, ControllerEvent, ControllerOptions, EventType } from '..';
 
 /**
  * Configuration options for DynamoDBController

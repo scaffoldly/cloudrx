@@ -1,9 +1,5 @@
 import { Observable, fromEvent as _fromEvent } from 'rxjs';
-import {
-  Controller,
-  ControllerEvent,
-  EventType,
-} from '../controllers';
+import { Controller, ControllerEvent, EventType } from '../controllers';
 
 /**
  * Strictly typed fromEvent for Controllers.
