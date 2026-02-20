@@ -75,6 +75,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "minimatch": "^9.0.5"
+  },
   "prettier": {
     "semi": true,
     "trailingComma": "es5",
