@@ -185,7 +185,7 @@ export class DynamoDBController<T = unknown> extends Controller<
   /**
    * Start streaming from DynamoDB Streams
    */
-  protected override startStreaming(): void {
+  protected override start(): void {
     if (this.streamSubscription) return;
 
     const aborted$ = this.abortable.aborted;
@@ -225,7 +225,7 @@ export class DynamoDBController<T = unknown> extends Controller<
   /**
    * Stop streaming from DynamoDB Streams
    */
-  protected override stopStreaming(): void {
+  protected override stop(): void {
     // Stop shard discovery
     this.streamSubscription?.unsubscribe();
     this.streamSubscription = undefined;

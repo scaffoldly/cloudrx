@@ -47,8 +47,8 @@ export interface ControllerOptions {
  *
  * Subclasses must implement:
  * - `id`: unique identifier for the controller instance
- * - `startStreaming()`: begin producing events
- * - `stopStreaming()`: stop producing events
+ * - `start()`: begin producing events
+ * - `stop()`: stop producing events
  * - `onDispose()`: cleanup specific to the subclass
  */
 export abstract class Controller<E extends ControllerEvent<unknown>>
@@ -100,12 +100,12 @@ export abstract class Controller<E extends ControllerEvent<unknown>>
   /**
    * Start producing events (called when first listener subscribes)
    */
-  protected abstract startStreaming(): void;
+  protected abstract start(): void;
 
   /**
    * Stop producing events (called when last listener unsubscribes)
    */
-  protected abstract stopStreaming(): void;
+  protected abstract stop(): void;
 
   /**
    * Subclass-specific cleanup (called during dispose)
@@ -121,7 +121,7 @@ export abstract class Controller<E extends ControllerEvent<unknown>>
     // Increment listener count and start streaming if needed
     this.listenerCount++;
     if (this.listenerCount === 1) {
-      this.startStreaming();
+      this.start();
     }
 
     // Create subscription that calls the listener
@@ -150,7 +150,7 @@ export abstract class Controller<E extends ControllerEvent<unknown>>
       // Decrement listener count and stop streaming if no listeners
       this.listenerCount--;
       if (this.listenerCount === 0) {
-        this.stopStreaming();
+        this.stop();
       }
 
       subscriber.next();
@@ -217,7 +217,7 @@ export abstract class Controller<E extends ControllerEvent<unknown>>
     this.onDispose();
 
     // Stop streaming
-    this.stopStreaming();
+    this.stop();
 
     // Complete subjects
     this.allEvents$.complete();
