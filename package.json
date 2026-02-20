@@ -76,7 +76,7 @@
     "node": ">=20"
   },
   "overrides": {
-    "minimatch": "^9.0.5",
+    "minimatch": "^10.2.1",
     "fast-xml-parser": "^5.3.6"
   },
   "prettier": {
