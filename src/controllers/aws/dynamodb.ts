@@ -24,7 +24,7 @@ import {
   ControllerEvent,
   ControllerOptions,
   EventType,
-} from '../Controller';
+} from '..';
 
 /**
  * Configuration options for DynamoDBController

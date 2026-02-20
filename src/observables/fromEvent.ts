@@ -3,7 +3,7 @@ import {
   Controller,
   ControllerEvent,
   EventType,
-} from '../controllers/Controller';
+} from '../controllers';
 
 /**
  * Strictly typed fromEvent for Controllers.

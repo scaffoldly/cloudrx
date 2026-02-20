@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-dynamodb-streams';
 import { fromEvent } from '../../observables/fromEvent';
 import { Abortable } from '../../util/abortable';
-import { Controller } from '../Controller';
+import { Controller } from '..';
 import {
   DynamoDBController,
   DynamoDBEvent,
