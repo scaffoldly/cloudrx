@@ -7,6 +7,10 @@ on:
     branches: ['**']
   workflow_dispatch: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: write-all
 
 jobs:
@@ -162,7 +166,7 @@ jobs:
 
   prerelease:
     runs-on: ubuntu-latest
-    needs: [quality-checks, unit-tests]
+    needs: [quality-checks, unit-tests, integration-tests]
     name: Pre-release to NPM
     if: |
       success() &&
