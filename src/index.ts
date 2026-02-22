@@ -29,12 +29,15 @@ export { Logger, InfoLogger } from './util';
 export {
   Controller,
   ControllerEvent,
+  ControllerKey,
+  ControllerValue,
   ControllerOptions,
   EventType,
   EventListener,
   DynamoDBController,
   DynamoDBControllerOptions,
   DynamoDBEvent,
+  DynamoDBValue,
 } from './controllers';
 
 // Observables - RxJS observable helpers

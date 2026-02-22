@@ -8,24 +8,61 @@ import {
 } from 'rxjs/internal/observable/fromEvent';
 import { Abortable } from '../util/abortable';
 
+/** Event classification for controller state changes */
 export type EventType = 'modified' | 'removed' | 'expired';
+
+/** Callback or object-based event listener compatible with RxJS fromEvent */
 export type EventListener<E> = ((evt: E) => void) | EventListenerObject<E>;
 
+/** @internal Tracks a listener's subscription and associated event type */
 type TypedSubscription = {
   type: EventType;
   sub: Subscription;
 };
 
 /**
- * Base event interface for controller events
+ * Allowed key types for controller values.
+ *
+ * - `string` or `number` for simple identifiers
+ * - `Record<string, unknown>` for composite keys (e.g., DynamoDB hash/range)
  */
-export interface ControllerEvent<T = unknown> {
+export type ControllerKey = string | number | Record<string, unknown>;
+
+/**
+ * Abstract wrapper that pairs a key with its associated value.
+ *
+ * Subclasses provide concrete key and value types for a specific
+ * data source (e.g., {@link DynamoDBValue} uses `Record<string, unknown>`
+ * keys and unmarshalled record values).
+ *
+ * @typeParam K - The key type (must extend {@link ControllerKey})
+ * @typeParam V - The raw value type
+ */
+export abstract class ControllerValue<
+  K extends ControllerKey = ControllerKey,
+  V = unknown,
+> {
+  /** The identifier for this value (e.g., primary key, composite key) */
+  abstract get key(): K;
+  /** The raw data payload, or `undefined` if absent */
+  abstract get value(): V | undefined;
+}
+
+/**
+ * Base event interface for controller state changes.
+ *
+ * Each event carries typed {@link ControllerValue} instances that
+ * encapsulate both the key and data for the affected record.
+ *
+ * @typeParam CV - The {@link ControllerValue} subclass carried by this event
+ */
+export interface ControllerEvent<CV extends ControllerValue = ControllerValue> {
   /** Event classification: modified, removed, or expired */
   type: EventType;
-  /** The new state (present for 'modified' events) */
-  newValue?: T | undefined;
-  /** The previous state (present for 'modified', 'removed', 'expired' events) */
-  oldValue?: T | undefined;
+  /** The new state (present for 'modified' events), access raw data via `.value` */
+  newValue?: CV | undefined;
+  /** The previous state (present for 'modified', 'removed', 'expired' events), access raw data via `.value` */
+  oldValue?: CV | undefined;
 }
 
 /**
@@ -51,7 +88,7 @@ export interface ControllerOptions {
  * - `stop()`: stop producing events
  * - `onDispose()`: cleanup specific to the subclass
  */
-export abstract class Controller<E extends ControllerEvent<unknown>>
+export abstract class Controller<E extends ControllerEvent = ControllerEvent>
   implements HasEventTargetAddRemove<E>
 {
   // Listener tracking for addEventListener/removeEventListener
@@ -248,4 +285,5 @@ export {
   DynamoDBController,
   DynamoDBControllerOptions,
   DynamoDBEvent,
+  DynamoDBValue,
 } from './aws/dynamodb';

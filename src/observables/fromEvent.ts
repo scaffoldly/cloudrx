@@ -31,7 +31,7 @@ import { Controller, ControllerEvent, EventType } from '../controllers';
  * @param eventName The event type: 'modified', 'removed', or 'expired'
  * @returns Observable of events of type T
  */
-export function fromEvent<T extends ControllerEvent<unknown>>(
+export function fromEvent<T extends ControllerEvent>(
   target: Controller<T>,
   eventName: EventType
 ): Observable<T> {

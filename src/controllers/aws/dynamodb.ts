@@ -19,7 +19,13 @@ import {
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import { Controller, ControllerEvent, ControllerOptions, EventType } from '..';
+import {
+  Controller,
+  ControllerEvent,
+  ControllerOptions,
+  ControllerValue,
+  EventType,
+} from '..';
 
 /**
  * Configuration options for DynamoDBController
@@ -36,17 +42,55 @@ export interface DynamoDBControllerOptions extends ControllerOptions {
 }
 
 /**
+ * {@link ControllerValue} implementation for DynamoDB records.
+ *
+ * Wraps the unmarshalled DynamoDB key attributes and record data
+ * into a single typed value object carried by {@link DynamoDBEvent}.
+ *
+ * @typeParam T - The application-level type of the DynamoDB record
+ *
+ * @example
+ * ```typescript
+ * // Accessing key and value from an event
+ * fromEvent(controller, 'modified').subscribe(event => {
+ *   const keys = event.newValue?.key;   // { id: 'user-123' }
+ *   const data = event.newValue?.value; // { id: 'user-123', name: 'Alice', ... }
+ * });
+ * ```
+ */
+export class DynamoDBValue<T = unknown> extends ControllerValue<
+  Record<string, unknown>,
+  T
+> {
+  constructor(
+    private readonly _key: Record<string, unknown>,
+    private readonly _value: T | undefined
+  ) {
+    super();
+  }
+
+  /** DynamoDB key attributes (hash key, and range key if present) */
+  get key(): Record<string, unknown> {
+    return this._key;
+  }
+
+  /** Unmarshalled DynamoDB record data, or `undefined` if the image was not captured */
+  get value(): T | undefined {
+    return this._value;
+  }
+}
+
+/**
  * Event emitted by DynamoDBController
  */
-export interface DynamoDBEvent<T = unknown> extends ControllerEvent<T> {
+export interface DynamoDBEvent<T = unknown>
+  extends ControllerEvent<DynamoDBValue<T>> {
   /** Original DynamoDB event name */
   eventName: 'INSERT' | 'MODIFY' | 'REMOVE';
   /** Approximate creation time of the record */
   timestamp: Date;
   /** DynamoDB stream sequence number */
   sequenceNumber: string;
-  /** Hash/Range key values */
-  keys: Record<string, unknown>;
   /** Original DynamoDB stream record */
   raw: _Record;
 }
@@ -362,18 +406,18 @@ export class DynamoDBController<T = unknown> extends Controller<
           ? new Date(creationTime * 1000)
           : new Date();
 
-    // Unmarshall images - NewImage/OldImage are already AttributeValue maps
-    const newValue: T | undefined = dynamodb.NewImage
-      ? (unmarshall(dynamodb.NewImage) as T)
-      : undefined;
-    const oldValue: T | undefined = dynamodb.OldImage
-      ? (unmarshall(dynamodb.OldImage) as T)
-      : undefined;
-
     // Extract keys
     const keys: Record<string, unknown> = dynamodb.Keys
       ? unmarshall(dynamodb.Keys)
       : {};
+
+    // Unmarshall images into DynamoDBValue instances
+    const newValue: DynamoDBValue<T> | undefined = dynamodb.NewImage
+      ? new DynamoDBValue<T>(keys, unmarshall(dynamodb.NewImage) as T)
+      : undefined;
+    const oldValue: DynamoDBValue<T> | undefined = dynamodb.OldImage
+      ? new DynamoDBValue<T>(keys, unmarshall(dynamodb.OldImage) as T)
+      : undefined;
 
     let type: EventType;
 
@@ -390,7 +434,6 @@ export class DynamoDBController<T = unknown> extends Controller<
       eventName,
       timestamp,
       sequenceNumber,
-      keys,
       newValue,
       oldValue,
       raw: record,
@@ -406,7 +449,7 @@ export class DynamoDBController<T = unknown> extends Controller<
    * 3. The TTL value is <= deletion timestamp
    */
   private isExpiredRemoval(
-    oldValue: T | undefined,
+    oldValue: DynamoDBValue<T> | undefined,
     deletionTime: Date
   ): boolean {
     // No TTL configured - all removals are "removed"
@@ -414,11 +457,12 @@ export class DynamoDBController<T = unknown> extends Controller<
       return false;
     }
 
-    if (!oldValue || typeof oldValue !== 'object') {
+    const raw = oldValue?.value;
+    if (!raw || typeof raw !== 'object') {
       return false;
     }
 
-    const ttlValue = (oldValue as Record<string, unknown>)[this.ttlAttribute];
+    const ttlValue = (raw as Record<string, unknown>)[this.ttlAttribute];
 
     // No TTL attribute on record - it was manually deleted
     if (ttlValue === undefined || ttlValue === null) {
