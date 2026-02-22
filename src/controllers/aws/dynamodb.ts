@@ -17,6 +17,7 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
   DeleteCommand,
+  GetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   DynamoDBStreamsClient,
@@ -276,6 +277,23 @@ export class DynamoDBController<T = unknown> extends Controller<
       )
     ).pipe(
       map(() => undefined as void),
+      catchError((err) => {
+        if (this.isAbortError(err)) return EMPTY;
+        throw err;
+      })
+    );
+  }
+
+  /** Fetch an item from DynamoDB by key. */
+  override get(key: Record<string, unknown>): Observable<T | undefined> {
+    const tableName = this.tableArn.split('/').pop();
+    return defer(() =>
+      this.dynamoDBClient.send(
+        new GetCommand({ TableName: tableName, Key: key }),
+        { abortSignal: this.abortable.signal }
+      )
+    ).pipe(
+      map((response) => response.Item as T | undefined),
       catchError((err) => {
         if (this.isAbortError(err)) return EMPTY;
         throw err;

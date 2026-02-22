@@ -33,6 +33,10 @@ class TestController extends Controller<TestEvent> {
     return of(undefined as void);
   }
 
+  override get(_key: string): Observable<string | undefined> {
+    return of(undefined);
+  }
+
   emit(event: TestEvent): void {
     this.allEvents$.next(event);
   }

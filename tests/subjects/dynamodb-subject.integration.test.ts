@@ -5,7 +5,7 @@ import {
   TableDescription,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { fromEvent, Controller, Subject } from 'cloudrx';
+import { fromEvent, Controller, Subject, BehaviorSubject } from 'cloudrx';
 import {
   DynamoDBController,
   DynamoDBEvent,
@@ -138,6 +138,107 @@ describe('DynamoDB Subject Integration', () => {
     const received = values.find((v) => v.id === 'rt-1');
     expect(received).toBeDefined();
     expect(received).toEqual({ id: 'rt-1', data: 'round-trip' });
+  });
+
+  describe('BehaviorSubject', () => {
+    it('getValue$() returns current record from DynamoDB', async () => {
+      // Insert a record directly
+      await firstValueFrom(
+        controller.put({ id: 'bs-get', data: 'behavior value' })
+      );
+
+      const subject = new BehaviorSubject<TestRecord>({
+        id: '',
+        data: '',
+      }).withController(controller, { id: 'bs-get' });
+
+      const value = await firstValueFrom(subject.getValue$());
+
+      expect(value).toBeDefined();
+      expect(value).toEqual({ id: 'bs-get', data: 'behavior value' });
+    });
+
+    it('getValue$() returns undefined for non-existent key', async () => {
+      const subject = new BehaviorSubject<TestRecord>({
+        id: '',
+        data: '',
+      }).withController(controller, { id: 'no-such-key' });
+
+      const value = await firstValueFrom(subject.getValue$());
+
+      expect(value).toBeUndefined();
+    });
+
+    it('next() writes and stream delivers to subscribers', async () => {
+      // Seed to ensure stream has shards
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const subject = new BehaviorSubject<TestRecord>({
+        id: '',
+        data: '',
+      }).withController(controller, { id: 'bs-next' });
+
+      const values: TestRecord[] = [];
+      const sub = subject.subscribe((value) => {
+        values.push(value);
+      });
+      subscriptions.push(sub);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      subject.next({ id: 'bs-next', data: 'from behavior subject' });
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const received = values.find((v) => v.id === 'bs-next');
+      expect(received).toBeDefined();
+      expect(received).toEqual({
+        id: 'bs-next',
+        data: 'from behavior subject',
+      });
+    });
+
+    it('subscribe() receives controller events', async () => {
+      // Seed to ensure stream has shards
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const subject = new BehaviorSubject<TestRecord>({
+        id: '',
+        data: '',
+      }).withController(controller, { id: 'bs-ctrl' });
+
+      const values: TestRecord[] = [];
+      const sub = subject.subscribe((value) => {
+        values.push(value);
+      });
+      subscriptions.push(sub);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Write directly via controller
+      await firstValueFrom(
+        controller.put({ id: 'bs-ctrl', data: 'from controller' })
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const received = values.find((v) => v.id === 'bs-ctrl');
+      expect(received).toBeDefined();
+      expect(received).toEqual({ id: 'bs-ctrl', data: 'from controller' });
+    });
+
+    it('getValue() throws when wired to a controller', () => {
+      const subject = new BehaviorSubject<TestRecord>({
+        id: '',
+        data: '',
+      }).withController(controller, { id: 'any' });
+
+      expect(() => subject.getValue()).toThrow(
+        'Cannot use getValue() on a controller-wired BehaviorSubject'
+      );
+    });
   });
 
   it('multiple subscribers both receive events', async () => {

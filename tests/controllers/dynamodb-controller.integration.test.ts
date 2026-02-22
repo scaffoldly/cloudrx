@@ -289,6 +289,27 @@ describe('DynamoDBController Integration', () => {
     });
   });
 
+  describe('get() method', () => {
+    it('returns an item by key', async () => {
+      // Insert a record
+      await firstValueFrom(controller.put({ id: 'get-test', data: 'fetched' }));
+
+      // Fetch it back
+      const item = await firstValueFrom(controller.get({ id: 'get-test' }));
+
+      expect(item).toBeDefined();
+      expect(item).toEqual({ id: 'get-test', data: 'fetched' });
+    });
+
+    it('returns undefined for non-existent key', async () => {
+      const item = await firstValueFrom(
+        controller.get({ id: 'does-not-exist' })
+      );
+
+      expect(item).toBeUndefined();
+    });
+  });
+
   describe('track() method', () => {
     it('tracks observables with controller lifecycle', async () => {
       const { of } = await import('rxjs');

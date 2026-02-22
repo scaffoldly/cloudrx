@@ -140,6 +140,9 @@ export abstract class Controller<
   /** Delete a value by key, emitting a 'removed' event via the underlying data source */
   public abstract remove(key: E['key']): Observable<void>;
 
+  /** Fetch a value by key from the underlying data source */
+  public abstract get(key: E['key']): Observable<E['value'] | undefined>;
+
   /**
    * Subscribe to events of a specific type
    */
