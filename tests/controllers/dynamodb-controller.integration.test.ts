@@ -4,11 +4,7 @@ import {
   DynamoDBClientConfig,
   TableDescription,
 } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient,
-  PutCommand,
-  DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { fromEvent, Controller } from 'cloudrx';
 import {
   DynamoDBController,
@@ -138,13 +134,8 @@ describe('DynamoDBController Integration', () => {
       // Wait for stream polling to start and catch up
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Insert another record
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'test-1', data: 'hello world' },
-        })
-      );
+      // Insert another record via controller
+      controller.put({ id: 'test-1', data: 'hello world' });
 
       // Wait for event to be processed
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -189,13 +180,8 @@ describe('DynamoDBController Integration', () => {
       // Wait for stream polling to catch up
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Update the record
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'test-2', data: 'updated' },
-        })
-      );
+      // Update the record via controller
+      controller.put({ id: 'test-2', data: 'updated' });
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -236,13 +222,8 @@ describe('DynamoDBController Integration', () => {
       });
       subscriptions.push(sub);
 
-      // Delete the record
-      await docClient.send(
-        new DeleteCommand({
-          TableName: tableName,
-          Key: { id: 'test-3' },
-        })
-      );
+      // Delete the record via controller
+      controller.remove({ id: 'test-3' });
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -297,13 +278,8 @@ describe('DynamoDBController Integration', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Insert a record
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'obs-test', data: 'from observable' },
-        })
-      );
+      // Insert a record via controller
+      newController.put({ id: 'obs-test', data: 'from observable' });
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -351,13 +327,8 @@ describe('DynamoDBController Integration', () => {
       // Wait for stream polling to start
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Insert a record
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'multi-test', data: 'shared' },
-        })
-      );
+      // Insert a record via controller
+      controller.put({ id: 'multi-test', data: 'shared' });
 
       // Wait for events
       await new Promise((resolve) => setTimeout(resolve, 1000));

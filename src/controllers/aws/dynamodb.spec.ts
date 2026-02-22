@@ -882,4 +882,80 @@ describe('DynamoDBController', () => {
       expect((shard2Event.value as { id: string }).id).toBe('from-shard-002');
     });
   });
+
+  describe('put()', () => {
+    it('sends a PutCommand with the value as Item', () => {
+      controller = createMockController();
+
+      controller.put({ id: 'put-test', data: 'hello' });
+
+      const putCall = mockSend.mock.calls.find(
+        ([cmd]: [{ constructor: { name: string } }]) =>
+          cmd.constructor.name === 'PutCommand'
+      );
+      expect(putCall).toBeDefined();
+      expect(putCall![0].input).toEqual({
+        TableName: 'test-table',
+        Item: { id: 'put-test', data: 'hello' },
+      });
+    });
+
+    it('does not throw on abort error', async () => {
+      controller = createMockController();
+
+      const abortError = new DOMException('Aborted', 'AbortError');
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+        if (commandName === 'PutCommand') {
+          return Promise.reject(abortError);
+        }
+        return Promise.resolve({
+          StreamDescription: { Shards: [] },
+        });
+      });
+
+      // Should not throw
+      controller.put({ id: 'abort-test', data: 'x' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+  });
+
+  describe('remove()', () => {
+    it('sends a DeleteCommand with key', () => {
+      controller = createMockController();
+
+      controller.remove({ id: 'remove-test' });
+
+      const deleteCall = mockSend.mock.calls.find(
+        ([cmd]: [{ constructor: { name: string } }]) =>
+          cmd.constructor.name === 'DeleteCommand'
+      );
+      expect(deleteCall).toBeDefined();
+      expect(deleteCall![0].input).toEqual({
+        TableName: 'test-table',
+        Key: { id: 'remove-test' },
+      });
+    });
+
+    it('does not throw on abort error', async () => {
+      controller = createMockController();
+
+      const abortError = new DOMException('Aborted', 'AbortError');
+      mockSend.mockImplementation((command: unknown) => {
+        const commandName = (command as { constructor: { name: string } })
+          .constructor.name;
+        if (commandName === 'DeleteCommand') {
+          return Promise.reject(abortError);
+        }
+        return Promise.resolve({
+          StreamDescription: { Shards: [] },
+        });
+      });
+
+      // Should not throw
+      controller.remove({ id: 'abort-test' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+  });
 });

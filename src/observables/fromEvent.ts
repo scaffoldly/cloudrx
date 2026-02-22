@@ -9,7 +9,7 @@ import { Controller, ControllerEvent, EventType } from '../controllers';
  *
  * @example
  * ```typescript
- * const controller = await DynamoDBController.from<MyType>('my-table');
+ * const controller = DynamoDBController.from<MyType>(table);
  *
  * // Listen for modifications (INSERT/MODIFY)
  * fromEvent(controller, 'modified').subscribe(event => {

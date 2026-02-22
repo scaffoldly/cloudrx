@@ -61,6 +61,8 @@ export interface ControllerOptions {
  * - `start()`: begin producing events
  * - `stop()`: stop producing events
  * - `onDispose()`: cleanup specific to the subclass
+ * - `put(value)`: write a value (the data source emits a 'modified' event)
+ * - `remove(key)`: delete a value by key (the data source emits a 'removed' event)
  */
 export abstract class Controller<
   E extends ControllerEvent<ControllerKey, unknown> = ControllerEvent,
@@ -131,6 +133,12 @@ export abstract class Controller<
    * Unlike stop(), this is called exactly once.
    */
   protected abstract onDispose(): void;
+
+  /** Write a value, emitting a 'modified' event via the underlying data source */
+  public abstract put(value: E['key'] & E['value']): void;
+
+  /** Delete a value by key, emitting a 'removed' event via the underlying data source */
+  public abstract remove(key: E['key']): void;
 
   /**
    * Subscribe to events of a specific type

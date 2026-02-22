@@ -40,6 +40,14 @@ class TestController extends Controller<TestEvent> {
     TestController.instances.delete(this._id);
   }
 
+  override put(value: string & string): void {
+    this.allEvents$.next({ type: 'modified', key: value, value });
+  }
+
+  override remove(key: string): void {
+    this.allEvents$.next({ type: 'removed', key, value: key });
+  }
+
   // Expose allEvents$ for testing
   emit(event: TestEvent): void {
     this.allEvents$.next(event);
