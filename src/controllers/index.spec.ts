@@ -1,5 +1,5 @@
 /* global describe, it, beforeEach, afterEach, expect, jest */
-import { Subscription } from 'rxjs';
+import { Observable, of, Subscription } from 'rxjs';
 import { fromEvent } from '../observables/fromEvent';
 import { Abortable } from '../util/abortable';
 import { Controller, ControllerEvent, ControllerOptions } from './index';
@@ -40,12 +40,14 @@ class TestController extends Controller<TestEvent> {
     TestController.instances.delete(this._id);
   }
 
-  override put(value: string & string): void {
+  override put(value: string & string): Observable<void> {
     this.allEvents$.next({ type: 'modified', key: value, value });
+    return of(undefined as void);
   }
 
-  override remove(key: string): void {
+  override remove(key: string): Observable<void> {
     this.allEvents$.next({ type: 'removed', key, value: key });
+    return of(undefined as void);
   }
 
   // Expose allEvents$ for testing

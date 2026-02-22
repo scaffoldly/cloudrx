@@ -135,10 +135,10 @@ export abstract class Controller<
   protected abstract onDispose(): void;
 
   /** Write a value, emitting a 'modified' event via the underlying data source */
-  public abstract put(value: E['key'] & E['value']): void;
+  public abstract put(value: E['key'] & E['value']): Observable<void>;
 
   /** Delete a value by key, emitting a 'removed' event via the underlying data source */
-  public abstract remove(key: E['key']): void;
+  public abstract remove(key: E['key']): Observable<void>;
 
   /**
    * Subscribe to events of a specific type

@@ -1,5 +1,5 @@
 /* global describe, it, beforeEach, afterEach, expect, jest */
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { TableDescription } from '@aws-sdk/client-dynamodb';
 import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import { fromEvent } from '../../observables/fromEvent';
@@ -884,10 +884,10 @@ describe('DynamoDBController', () => {
   });
 
   describe('put()', () => {
-    it('sends a PutCommand with the value as Item', () => {
+    it('sends a PutCommand with the value as Item', async () => {
       controller = createMockController();
 
-      controller.put({ id: 'put-test', data: 'hello' });
+      await firstValueFrom(controller.put({ id: 'put-test', data: 'hello' }));
 
       const putCall = mockSend.mock.calls.find(
         ([cmd]: [{ constructor: { name: string } }]) =>
@@ -900,7 +900,7 @@ describe('DynamoDBController', () => {
       });
     });
 
-    it('does not throw on abort error', async () => {
+    it('completes without error on abort', async () => {
       controller = createMockController();
 
       const abortError = new DOMException('Aborted', 'AbortError');
@@ -915,17 +915,24 @@ describe('DynamoDBController', () => {
         });
       });
 
-      // Should not throw
-      controller.put({ id: 'abort-test', data: 'x' });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Should complete as EMPTY (no values emitted)
+      const values: void[] = [];
+      await new Promise<void>((resolve, reject) => {
+        controller.put({ id: 'abort-test', data: 'x' }).subscribe({
+          next: (v) => values.push(v),
+          error: reject,
+          complete: resolve,
+        });
+      });
+      expect(values).toHaveLength(0);
     });
   });
 
   describe('remove()', () => {
-    it('sends a DeleteCommand with key', () => {
+    it('sends a DeleteCommand with key', async () => {
       controller = createMockController();
 
-      controller.remove({ id: 'remove-test' });
+      await firstValueFrom(controller.remove({ id: 'remove-test' }));
 
       const deleteCall = mockSend.mock.calls.find(
         ([cmd]: [{ constructor: { name: string } }]) =>
@@ -938,7 +945,7 @@ describe('DynamoDBController', () => {
       });
     });
 
-    it('does not throw on abort error', async () => {
+    it('completes without error on abort', async () => {
       controller = createMockController();
 
       const abortError = new DOMException('Aborted', 'AbortError');
@@ -953,9 +960,16 @@ describe('DynamoDBController', () => {
         });
       });
 
-      // Should not throw
-      controller.remove({ id: 'abort-test' });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Should complete as EMPTY (no values emitted)
+      const values: void[] = [];
+      await new Promise<void>((resolve, reject) => {
+        controller.remove({ id: 'abort-test' }).subscribe({
+          next: (v) => values.push(v),
+          error: reject,
+          complete: resolve,
+        });
+      });
+      expect(values).toHaveLength(0);
     });
   });
 });

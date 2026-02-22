@@ -84,8 +84,8 @@ export type DynamoDBEvent<T = unknown> = ControllerEvent<
  *   console.log('Added/changed:', event.key, event.value);
  * });
  *
- * controller.put({ id: '123', name: 'Alice' });
- * controller.remove({ id: '123' });
+ * controller.put({ id: '123', name: 'Alice' }).subscribe();
+ * controller.remove({ id: '123' }).subscribe();
  *
  * // Cleanup
  * controller.dispose();
@@ -107,7 +107,7 @@ export class DynamoDBController<T = unknown> extends Controller<
   private readonly pollInterval: number;
 
   // AWS clients
-  private readonly _dynamoDBClient: DynamoDBDocumentClient;
+  private readonly dynamoDBClient: DynamoDBDocumentClient;
   private readonly streamsClient: DynamoDBStreamsClient;
 
   // Shard management
@@ -129,7 +129,7 @@ export class DynamoDBController<T = unknown> extends Controller<
       'ttlAttribute' in options ? (options.ttlAttribute ?? null) : 'expires';
     this.pollInterval = options.pollInterval ?? 5000;
     const clientConfig = options.clientConfig ?? {};
-    this._dynamoDBClient = DynamoDBDocumentClient.from(
+    this.dynamoDBClient = DynamoDBDocumentClient.from(
       new DynamoDBClient(clientConfig)
     );
     this.streamsClient = new DynamoDBStreamsClient(clientConfig);
@@ -259,40 +259,48 @@ export class DynamoDBController<T = unknown> extends Controller<
     DynamoDBController.instances.delete(this.tableArn);
 
     // Destroy AWS clients
-    this._dynamoDBClient.destroy();
+    this.dynamoDBClient.destroy();
     this.streamsClient.destroy();
   }
 
   /** Write an item to DynamoDB. The stream will emit a 'modified' event. */
-  override put(value: Record<string, unknown> & T): void {
+  override put(value: Record<string, unknown> & T): Observable<void> {
     const tableName = this.tableArn.split('/').pop();
-    this._dynamoDBClient
-      .send(
+    return defer(() =>
+      this.dynamoDBClient.send(
         new PutCommand({
           TableName: tableName,
           Item: value as Record<string, unknown>,
         }),
         { abortSignal: this.abortable.signal }
       )
-      .catch((err) => {
-        if (!this.isAbortError(err)) throw err;
-      });
+    ).pipe(
+      map(() => undefined as void),
+      catchError((err) => {
+        if (this.isAbortError(err)) return EMPTY;
+        throw err;
+      })
+    );
   }
 
   /** Delete an item from DynamoDB. The stream will emit a 'removed' event. */
-  override remove(key: Record<string, unknown>): void {
+  override remove(key: Record<string, unknown>): Observable<void> {
     const tableName = this.tableArn.split('/').pop();
-    this._dynamoDBClient
-      .send(
+    return defer(() =>
+      this.dynamoDBClient.send(
         new DeleteCommand({
           TableName: tableName,
           Key: key,
         }),
         { abortSignal: this.abortable.signal }
       )
-      .catch((err) => {
-        if (!this.isAbortError(err)) throw err;
-      });
+    ).pipe(
+      map(() => undefined as void),
+      catchError((err) => {
+        if (this.isAbortError(err)) return EMPTY;
+        throw err;
+      })
+    );
   }
 
   private discoverShards(): Observable<Shard[]> {

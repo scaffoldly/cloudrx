@@ -113,7 +113,7 @@ describe('DynamoDBController Integration', () => {
   describe('event streaming', () => {
     it('emits modified event on INSERT', async () => {
       // Seed record to ensure stream has shards
-      controller.put({ id: 'seed', data: 'seed record' });
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed record' }));
 
       // Wait for shard to be created
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -128,7 +128,9 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert another record via controller
-      controller.put({ id: 'test-1', data: 'hello world' });
+      await firstValueFrom(
+        controller.put({ id: 'test-1', data: 'hello world' })
+      );
 
       // Wait for event to be processed
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -151,7 +153,7 @@ describe('DynamoDBController Integration', () => {
 
     it('emits modified event on MODIFY', async () => {
       // Seed record to create the record and shard
-      controller.put({ id: 'test-2', data: 'original' });
+      await firstValueFrom(controller.put({ id: 'test-2', data: 'original' }));
 
       // Wait for shard to be created
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -167,7 +169,7 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Update the record via controller
-      controller.put({ id: 'test-2', data: 'updated' });
+      await firstValueFrom(controller.put({ id: 'test-2', data: 'updated' }));
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -189,7 +191,7 @@ describe('DynamoDBController Integration', () => {
 
     it('emits removed event on DELETE', async () => {
       // Seed record
-      controller.put({ id: 'test-3', data: 'to-delete' });
+      await firstValueFrom(controller.put({ id: 'test-3', data: 'to-delete' }));
 
       // Wait for insert
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -202,7 +204,7 @@ describe('DynamoDBController Integration', () => {
       subscriptions.push(sub);
 
       // Delete the record via controller
-      controller.remove({ id: 'test-3' });
+      await firstValueFrom(controller.remove({ id: 'test-3' }));
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -227,7 +229,7 @@ describe('DynamoDBController Integration', () => {
   describe('observable factory', () => {
     it('from$() creates controller that receives events', async () => {
       // Seed record to create shard
-      controller.put({ id: 'seed', data: 'seed' });
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Clear cache first
@@ -251,7 +253,9 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert a record via controller
-      newController.put({ id: 'obs-test', data: 'from observable' });
+      await firstValueFrom(
+        newController.put({ id: 'obs-test', data: 'from observable' })
+      );
 
       // Wait for event
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -275,7 +279,7 @@ describe('DynamoDBController Integration', () => {
   describe('multiple subscribers', () => {
     it('delivers events to all subscribers', async () => {
       // Seed record to create shard
-      controller.put({ id: 'seed', data: 'seed' });
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const events1: DynamoDBEvent<TestRecord>[] = [];
@@ -293,7 +297,9 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert a record via controller
-      controller.put({ id: 'multi-test', data: 'shared' });
+      await firstValueFrom(
+        controller.put({ id: 'multi-test', data: 'shared' })
+      );
 
       // Wait for events
       await new Promise((resolve) => setTimeout(resolve, 1000));
