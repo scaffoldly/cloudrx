@@ -24,13 +24,7 @@ import {
   Shard,
 } from '@aws-sdk/client-dynamodb-streams';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
-import {
-  Controller,
-  ControllerEvent,
-  ControllerOptions,
-  ControllerValue,
-  EventType,
-} from '..';
+import { Controller, ControllerEvent, ControllerOptions, EventType } from '..';
 
 /**
  * Configuration options for DynamoDBController
@@ -45,49 +39,17 @@ export interface DynamoDBControllerOptions extends ControllerOptions {
 }
 
 /**
- * {@link ControllerValue} implementation for DynamoDB records.
+ * Event emitted by DynamoDBController.
  *
- * Wraps the unmarshalled DynamoDB key attributes and record data
- * into a single typed value object carried by {@link DynamoDBEvent}.
+ * Extends {@link ControllerEvent} with DynamoDB-specific metadata.
+ * Key and value are flattened directly onto the event.
  *
  * @typeParam T - The application-level type of the DynamoDB record
- *
- * @example
- * ```typescript
- * // Accessing key and value from an event
- * fromEvent(controller, 'modified').subscribe(event => {
- *   const keys = event.newValue?.key;   // { id: 'user-123' }
- *   const data = event.newValue?.value; // { id: 'user-123', name: 'Alice', ... }
- * });
- * ```
  */
-export class DynamoDBValue<T = unknown> extends ControllerValue<
+export type DynamoDBEvent<T = unknown> = ControllerEvent<
   Record<string, unknown>,
   T
-> {
-  constructor(
-    private readonly _key: Record<string, unknown>,
-    private readonly _value: T | undefined
-  ) {
-    super();
-  }
-
-  /** DynamoDB key attributes (hash key, and range key if present) */
-  get key(): Record<string, unknown> {
-    return this._key;
-  }
-
-  /** Unmarshalled DynamoDB record data, or `undefined` if the image was not captured */
-  get value(): T | undefined {
-    return this._value;
-  }
-}
-
-/**
- * Event emitted by DynamoDBController
- */
-export interface DynamoDBEvent<T = unknown>
-  extends ControllerEvent<DynamoDBValue<T>> {
+> & {
   /** Original DynamoDB event name */
   eventName: 'INSERT' | 'MODIFY' | 'REMOVE';
   /** Approximate creation time of the record */
@@ -96,7 +58,7 @@ export interface DynamoDBEvent<T = unknown>
   sequenceNumber: string;
   /** Original DynamoDB stream record */
   raw: _Record;
-}
+};
 
 /**
  * DynamoDB Streams controller compatible with RxJS fromEvent pattern.
@@ -111,11 +73,11 @@ export interface DynamoDBEvent<T = unknown>
  * const controller = await DynamoDBController.from<MyType>('my-table');
  *
  * fromEvent(controller, 'modified').subscribe(event => {
- *   console.log('Added/changed:', event.newValue);
+ *   console.log('Added/changed:', event.key, event.value);
  * });
  *
  * fromEvent(controller, 'expired').subscribe(event => {
- *   console.log('TTL expired:', event.oldValue);
+ *   console.log('TTL expired:', event.key, event.value);
  * });
  *
  * // Cleanup
@@ -417,37 +379,43 @@ export class DynamoDBController<T = unknown> extends Controller<
           : new Date();
 
     // Extract keys
-    const keys: Record<string, unknown> = dynamodb.Keys
+    const key: Record<string, unknown> = dynamodb.Keys
       ? unmarshall(dynamodb.Keys)
       : {};
 
-    // Unmarshall images into DynamoDBValue instances
-    const newValue: DynamoDBValue<T> | undefined = dynamodb.NewImage
-      ? new DynamoDBValue<T>(keys, unmarshall(dynamodb.NewImage) as T)
+    // Unmarshall images
+    const newImage: T | undefined = dynamodb.NewImage
+      ? (unmarshall(dynamodb.NewImage) as T)
       : undefined;
-    const oldValue: DynamoDBValue<T> | undefined = dynamodb.OldImage
-      ? new DynamoDBValue<T>(keys, unmarshall(dynamodb.OldImage) as T)
+    const oldImage: T | undefined = dynamodb.OldImage
+      ? (unmarshall(dynamodb.OldImage) as T)
       : undefined;
 
-    let type: EventType;
+    const base = { eventName, timestamp, sequenceNumber, raw: record };
 
     if (eventName === 'INSERT' || eventName === 'MODIFY') {
-      type = 'modified';
+      if (!newImage) return null;
+      return {
+        type: 'modified',
+        key,
+        value: newImage,
+        ...(oldImage !== undefined ? { previousValue: oldImage } : {}),
+        ...base,
+      };
     } else if (eventName === 'REMOVE') {
-      type = this.isExpiredRemoval(oldValue, timestamp) ? 'expired' : 'removed';
-    } else {
-      return null;
+      if (!oldImage) return null;
+      const type: EventType = this.isExpiredRemoval(oldImage, timestamp)
+        ? 'expired'
+        : 'removed';
+      return {
+        type,
+        key,
+        value: oldImage,
+        ...base,
+      } as DynamoDBEvent<T>;
     }
 
-    return {
-      type,
-      eventName,
-      timestamp,
-      sequenceNumber,
-      newValue,
-      oldValue,
-      raw: record,
-    };
+    return null;
   }
 
   /**
@@ -459,7 +427,7 @@ export class DynamoDBController<T = unknown> extends Controller<
    * 3. The TTL value is <= deletion timestamp
    */
   private isExpiredRemoval(
-    oldValue: DynamoDBValue<T> | undefined,
+    oldValue: T | undefined,
     deletionTime: Date
   ): boolean {
     // No TTL configured - all removals are "removed"
@@ -467,12 +435,11 @@ export class DynamoDBController<T = unknown> extends Controller<
       return false;
     }
 
-    const raw = oldValue?.value;
-    if (!raw || typeof raw !== 'object') {
+    if (!oldValue || typeof oldValue !== 'object') {
       return false;
     }
 
-    const ttlValue = (raw as Record<string, unknown>)[this.ttlAttribute];
+    const ttlValue = (oldValue as Record<string, unknown>)[this.ttlAttribute];
 
     // No TTL attribute on record - it was manually deleted
     if (ttlValue === undefined || ttlValue === null) {

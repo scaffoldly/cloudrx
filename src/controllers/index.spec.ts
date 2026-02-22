@@ -2,34 +2,9 @@
 import { Subscription } from 'rxjs';
 import { fromEvent } from '../observables/fromEvent';
 import { Abortable } from '../util/abortable';
-import {
-  Controller,
-  ControllerEvent,
-  ControllerOptions,
-  ControllerValue,
-} from './index';
+import { Controller, ControllerEvent, ControllerOptions } from './index';
 
-/**
- * Concrete ControllerValue for testing
- */
-class TestValue extends ControllerValue<string, string> {
-  constructor(
-    private readonly _key: string,
-    private readonly _value: string | undefined
-  ) {
-    super();
-  }
-
-  get key(): string {
-    return this._key;
-  }
-
-  get value(): string | undefined {
-    return this._value;
-  }
-}
-
-type TestEvent = ControllerEvent<TestValue>;
+type TestEvent = ControllerEvent<string, string>;
 
 /**
  * Concrete implementation of Controller for testing base class behavior
@@ -161,8 +136,6 @@ describe('Controller', () => {
   });
 
   describe('event routing', () => {
-    const tv = (v: string): TestValue => new TestValue('k', v);
-
     it('routes modified events to modified listeners', () => {
       const events: TestEvent[] = [];
       const sub = fromEvent(controller, 'modified').subscribe((e) =>
@@ -170,13 +143,13 @@ describe('Controller', () => {
       );
       subscriptions.push(sub);
 
-      controller.emit({ type: 'modified', newValue: tv('test') });
-      controller.emit({ type: 'removed', oldValue: tv('test') });
-      controller.emit({ type: 'expired', oldValue: tv('test') });
+      controller.emit({ type: 'modified', key: 'k', value: 'test' });
+      controller.emit({ type: 'removed', key: 'k', value: 'test' });
+      controller.emit({ type: 'expired', key: 'k', value: 'test' });
 
       expect(events).toHaveLength(1);
       expect(events[0]!.type).toBe('modified');
-      expect(events[0]!.newValue?.value).toBe('test');
+      expect(events[0]!.value).toBe('test');
     });
 
     it('routes removed events to removed listeners', () => {
@@ -186,13 +159,13 @@ describe('Controller', () => {
       );
       subscriptions.push(sub);
 
-      controller.emit({ type: 'modified', newValue: tv('test') });
-      controller.emit({ type: 'removed', oldValue: tv('test') });
-      controller.emit({ type: 'expired', oldValue: tv('test') });
+      controller.emit({ type: 'modified', key: 'k', value: 'test' });
+      controller.emit({ type: 'removed', key: 'k', value: 'test' });
+      controller.emit({ type: 'expired', key: 'k', value: 'test' });
 
       expect(events).toHaveLength(1);
       expect(events[0]!.type).toBe('removed');
-      expect(events[0]!.oldValue?.value).toBe('test');
+      expect(events[0]!.value).toBe('test');
     });
 
     it('routes expired events to expired listeners', () => {
@@ -202,13 +175,13 @@ describe('Controller', () => {
       );
       subscriptions.push(sub);
 
-      controller.emit({ type: 'modified', newValue: tv('test') });
-      controller.emit({ type: 'removed', oldValue: tv('test') });
-      controller.emit({ type: 'expired', oldValue: tv('test') });
+      controller.emit({ type: 'modified', key: 'k', value: 'test' });
+      controller.emit({ type: 'removed', key: 'k', value: 'test' });
+      controller.emit({ type: 'expired', key: 'k', value: 'test' });
 
       expect(events).toHaveLength(1);
       expect(events[0]!.type).toBe('expired');
-      expect(events[0]!.oldValue?.value).toBe('test');
+      expect(events[0]!.value).toBe('test');
     });
 
     it('delivers events to multiple subscribers', () => {
@@ -223,12 +196,12 @@ describe('Controller', () => {
       );
       subscriptions.push(sub1, sub2);
 
-      controller.emit({ type: 'modified', newValue: tv('shared') });
+      controller.emit({ type: 'modified', key: 'k', value: 'shared' });
 
       expect(events1).toHaveLength(1);
       expect(events2).toHaveLength(1);
-      expect(events1[0]!.newValue?.value).toBe('shared');
-      expect(events2[0]!.newValue?.value).toBe('shared');
+      expect(events1[0]!.value).toBe('shared');
+      expect(events2[0]!.value).toBe('shared');
     });
 
     it('supports multiple event types simultaneously', () => {
@@ -242,17 +215,17 @@ describe('Controller', () => {
         fromEvent(controller, 'expired').subscribe((e) => expired.push(e))
       );
 
-      controller.emit({ type: 'modified', newValue: tv('a') });
-      controller.emit({ type: 'removed', oldValue: tv('b') });
-      controller.emit({ type: 'expired', oldValue: tv('c') });
+      controller.emit({ type: 'modified', key: 'k', value: 'a' });
+      controller.emit({ type: 'removed', key: 'k', value: 'b' });
+      controller.emit({ type: 'expired', key: 'k', value: 'c' });
 
       expect(modified).toHaveLength(1);
       expect(removed).toHaveLength(1);
       expect(expired).toHaveLength(1);
 
-      expect(modified[0]!.newValue?.value).toBe('a');
-      expect(removed[0]!.oldValue?.value).toBe('b');
-      expect(expired[0]!.oldValue?.value).toBe('c');
+      expect(modified[0]!.value).toBe('a');
+      expect(removed[0]!.value).toBe('b');
+      expect(expired[0]!.value).toBe('c');
     });
   });
 
@@ -345,8 +318,6 @@ describe('Controller', () => {
   });
 
   describe('addEventListener/removeEventListener', () => {
-    const tv = (v: string): TestValue => new TestValue('k', v);
-
     it('addEventListener works like fromEvent subscription', () => {
       const events: TestEvent[] = [];
       const listener = (e: TestEvent): number => events.push(e);
@@ -354,10 +325,10 @@ describe('Controller', () => {
       controller.addEventListener('modified', listener);
       expect(controller.startCalled).toBe(1);
 
-      controller.emit({ type: 'modified', newValue: tv('via-listener') });
+      controller.emit({ type: 'modified', key: 'k', value: 'via-listener' });
 
       expect(events).toHaveLength(1);
-      expect(events[0]!.newValue?.value).toBe('via-listener');
+      expect(events[0]!.value).toBe('via-listener');
     });
 
     it('removeEventListener stops receiving events', async () => {
@@ -365,17 +336,17 @@ describe('Controller', () => {
       const listener = (e: TestEvent): number => events.push(e);
 
       controller.addEventListener('modified', listener);
-      controller.emit({ type: 'modified', newValue: tv('first') });
+      controller.emit({ type: 'modified', key: 'k', value: 'first' });
 
       controller.removeEventListener('modified', listener);
 
       // Allow async cleanup
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      controller.emit({ type: 'modified', newValue: tv('second') });
+      controller.emit({ type: 'modified', key: 'k', value: 'second' });
 
       expect(events).toHaveLength(1);
-      expect(events[0]!.newValue?.value).toBe('first');
+      expect(events[0]!.value).toBe('first');
     });
 
     it('removeEventListener calls stop() when last listener removed', async () => {
@@ -399,10 +370,10 @@ describe('Controller', () => {
       };
 
       controller.addEventListener('modified', listenerObj);
-      controller.emit({ type: 'modified', newValue: tv('object-listener') });
+      controller.emit({ type: 'modified', key: 'k', value: 'object-listener' });
 
       expect(events).toHaveLength(1);
-      expect(events[0]!.newValue?.value).toBe('object-listener');
+      expect(events[0]!.value).toBe('object-listener');
 
       controller.removeEventListener('modified', listenerObj);
     });

@@ -13,17 +13,18 @@ import { Controller, ControllerEvent, EventType } from '../controllers';
  *
  * // Listen for modifications (INSERT/MODIFY)
  * fromEvent(controller, 'modified').subscribe(event => {
- *   console.log('Modified:', event.newValue);
+ *   console.log('Key:', event.key, 'Value:', event.value);
+ *   if (event.previousValue) console.log('Was:', event.previousValue);
  * });
  *
  * // Listen for removals (manual deletes)
  * fromEvent(controller, 'removed').subscribe(event => {
- *   console.log('Removed:', event.oldValue);
+ *   console.log('Removed:', event.key, event.value);
  * });
  *
  * // Listen for expirations (TTL deletes)
  * fromEvent(controller, 'expired').subscribe(event => {
- *   console.log('Expired:', event.oldValue);
+ *   console.log('Expired:', event.key, event.value);
  * });
  * ```
  *

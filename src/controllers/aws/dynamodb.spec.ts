@@ -608,8 +608,7 @@ describe('DynamoDBController', () => {
       expect(event.type).toBe('modified');
       expect(event.eventName).toBe('INSERT');
       expect(event.sequenceNumber).toBe('100');
-      expect(event.newValue?.value).toEqual({ id: 'test-1', data: 'hello' });
-      expect(event.oldValue).toBeUndefined();
+      expect(event.value).toEqual({ id: 'test-1', data: 'hello' });
     });
 
     it('cleans up completed shards when NextShardIterator is null', async () => {
@@ -681,7 +680,7 @@ describe('DynamoDBController', () => {
       expect(event.type).toBe('modified');
       expect(event.eventName).toBe('INSERT');
       expect(event.sequenceNumber).toBe('200');
-      expect(event.newValue?.value).toEqual({ id: 'final' });
+      expect(event.value).toEqual({ id: 'final' });
     });
 
     it('discovers new shards that appear after initial discovery', async () => {
@@ -745,12 +744,10 @@ describe('DynamoDBController', () => {
 
       // Should have received events from both shards
       const shard1Events = events.filter(
-        (e) =>
-          (e.newValue?.value as { source?: string })?.source === 'shard-001'
+        (e) => (e.value as { source?: string })?.source === 'shard-001'
       );
       const shard2Events = events.filter(
-        (e) =>
-          (e.newValue?.value as { source?: string })?.source === 'shard-002'
+        (e) => (e.value as { source?: string })?.source === 'shard-002'
       );
 
       expect(shard1Events.length).toBeGreaterThan(0);
@@ -760,10 +757,8 @@ describe('DynamoDBController', () => {
       const shard1Event = shard1Events[0]!;
       expect(shard1Event.type).toBe('modified');
       expect(shard1Event.eventName).toBe('INSERT');
-      expect((shard1Event.newValue?.value as { id: string }).id).toBe(
-        'shard-001'
-      );
-      expect((shard1Event.newValue?.value as { source: string }).source).toBe(
+      expect((shard1Event.value as { id: string }).id).toBe('shard-001');
+      expect((shard1Event.value as { source: string }).source).toBe(
         'shard-001'
       );
 
@@ -771,10 +766,8 @@ describe('DynamoDBController', () => {
       const shard2Event = shard2Events[0]!;
       expect(shard2Event.type).toBe('modified');
       expect(shard2Event.eventName).toBe('INSERT');
-      expect((shard2Event.newValue?.value as { id: string }).id).toBe(
-        'shard-002'
-      );
-      expect((shard2Event.newValue?.value as { source: string }).source).toBe(
+      expect((shard2Event.value as { id: string }).id).toBe('shard-002');
+      expect((shard2Event.value as { source: string }).source).toBe(
         'shard-002'
       );
     });
@@ -864,10 +857,10 @@ describe('DynamoDBController', () => {
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       const shard1Events = events.filter(
-        (e) => (e.newValue?.value as { id?: string })?.id === 'from-shard-001'
+        (e) => (e.value as { id?: string })?.id === 'from-shard-001'
       );
       const shard2Events = events.filter(
-        (e) => (e.newValue?.value as { id?: string })?.id === 'from-shard-002'
+        (e) => (e.value as { id?: string })?.id === 'from-shard-002'
       );
 
       // Should have exactly 1 event from shard-001 before it closed
@@ -880,17 +873,13 @@ describe('DynamoDBController', () => {
       expect(shard1Event.type).toBe('modified');
       expect(shard1Event.eventName).toBe('INSERT');
       expect(shard1Event.sequenceNumber).toBe('seq-001-1');
-      expect((shard1Event.newValue?.value as { id: string }).id).toBe(
-        'from-shard-001'
-      );
+      expect((shard1Event.value as { id: string }).id).toBe('from-shard-001');
 
       // Verify shard-002 event content
       const shard2Event = shard2Events[0]!;
       expect(shard2Event.type).toBe('modified');
       expect(shard2Event.eventName).toBe('INSERT');
-      expect((shard2Event.newValue?.value as { id: string }).id).toBe(
-        'from-shard-002'
-      );
+      expect((shard2Event.value as { id: string }).id).toBe('from-shard-002');
     });
   });
 });
