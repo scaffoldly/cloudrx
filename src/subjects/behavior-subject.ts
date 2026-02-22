@@ -1,13 +1,12 @@
 import {
-  Observable,
-  Observer,
   BehaviorSubject as _BehaviorSubject,
+  Observer,
   Subscription,
+  concat,
   of,
 } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { Controller, ControllerEvent, ControllerKey } from '../controllers';
-import { fromEvent } from '../observables';
+import { Controller, ControllerEvent } from '../controllers';
+import { Subject } from './subject';
 
 /**
  * Drop-in RxJS BehaviorSubject replacement with optional Controller wiring.
@@ -17,20 +16,17 @@ import { fromEvent } from '../observables';
  *
  * - {@link next} routes values through `controller.put()` (writes to the data source)
  * - {@link subscribe} receives events from `fromEvent(controller, 'modified')`
- * - {@link getValue} throws when wired (value is async); use {@link getValue$} instead
- * - {@link getValue$} fetches the current value from the controller via `controller.get()`
+ * - {@link getValue} returns the cached value, kept up-to-date by an internal
+ *   subscription to the controller stream (may be stale until first event arrives)
  *
  * @typeParam T - The value type emitted by the subject
  */
 export class BehaviorSubject<T> extends _BehaviorSubject<T> {
-  /** Bound put function from the wired controller */
-  private controllerPut?: (value: T) => Observable<void>;
+  /** Internal Subject used for controller delegation (next/subscribe) */
+  private readonly subject = new Subject<T>();
 
-  /** Bound get function from the wired controller */
-  private controllerGet?: () => Observable<T | undefined>;
-
-  /** Observable sourced from controller 'modified' events, mapped to values */
-  private controllerSource$?: Observable<T>;
+  /** Subscription that keeps the cached value in sync with controller events */
+  private syncSub?: Subscription;
 
   constructor(initialValue: T) {
     super(initialValue);
@@ -39,43 +35,47 @@ export class BehaviorSubject<T> extends _BehaviorSubject<T> {
   /**
    * Wire this subject to a Controller.
    *
-   * Once wired, {@link next} delegates to `controller.put()`,
-   * {@link subscribe} reads from the controller's `modified` event stream,
-   * and {@link getValue$} fetches the current value via `controller.get()`.
+   * Once wired:
+   * - {@link next} delegates to `controller.put()`
+   * - {@link subscribe} reads from the controller's `modified` event stream
+   * - {@link getValue} returns the last value received from the stream
+   *   (initially the constructor value until the first event arrives)
+   *
+   * The internal sync subscription is tied to the controller's lifecycle
+   * via {@link Controller.track} and is cleaned up on controller disposal.
    *
    * @param controller The controller to bridge
-   * @param key The key identifying the record for `getValue$()`
    * @returns `this` for chaining
    */
   public withController<E extends ControllerEvent>(
-    controller: Controller<E>,
-    key: E['key']
+    controller: Controller<E>
   ): this {
-    this.controllerPut = (v: T): Observable<void> => controller.put(v as never);
-    this.controllerGet = (): Observable<T | undefined> =>
-      controller.get(key as ControllerKey) as Observable<T | undefined>;
-    this.controllerSource$ = fromEvent(controller, 'modified').pipe(
-      map((e) => e.value as T)
-    );
+    this.subject.withController(controller);
+
+    // Keep the cached value updated from the controller stream.
+    // Track with the controller so it's cleaned up on disposal.
+    this.syncSub = controller
+      .track(this.subject)
+      .subscribe((value) => super.next(value));
+
     return this;
   }
 
   /**
-   * Emit a value. If wired to a controller, writes via `controller.put()`;
-   * otherwise emits directly to subscribers.
+   * Emit a value. When wired, delegates to the internal Subject
+   * (which routes through `controller.put()`). Otherwise emits directly.
    */
   override next(value: T): void {
-    if (this.controllerPut) {
-      this.controllerPut(value).subscribe();
+    if (this.syncSub) {
+      this.subject.next(value);
     } else {
       super.next(value);
     }
   }
 
   /**
-   * Subscribe to values. If wired to a controller, subscribes to the
-   * controller's `modified` event stream; otherwise behaves like a
-   * normal RxJS BehaviorSubject subscription.
+   * Subscribe to values. When wired, delegates to the internal Subject
+   * (which reads from the controller stream). Otherwise behaves normally.
    */
   override subscribe(
     observerOrNext?: Partial<Observer<T>> | ((value: T) => void) | null,
@@ -91,34 +91,10 @@ export class BehaviorSubject<T> extends _BehaviorSubject<T> {
             ...(complete != null && { complete }),
           }
         : (observerOrNext ?? {});
-    if (this.controllerSource$) {
-      return this.controllerSource$.subscribe(observer);
+    if (this.syncSub) {
+      // Emit the cached value first, then stream events (BehaviorSubject contract)
+      return concat(of(this.getValue()), this.subject).subscribe(observer);
     }
     return super.subscribe(observer);
-  }
-
-  /**
-   * Synchronous getValue(). When wired to a controller, throws because
-   * the current value must be fetched asynchronously. Use {@link getValue$} instead.
-   */
-  override getValue(): T {
-    if (this.controllerGet) {
-      throw new Error(
-        'Cannot use getValue() on a controller-wired BehaviorSubject. Use getValue$() instead.'
-      );
-    }
-    return super.getValue();
-  }
-
-  /**
-   * Observable-based getValue. When wired to a controller, fetches the
-   * current value via `controller.get(key)`. Otherwise returns the
-   * in-memory value via `of(super.getValue())`.
-   */
-  getValue$(): Observable<T | undefined> {
-    if (this.controllerGet) {
-      return this.controllerGet();
-    }
-    return of(super.getValue());
   }
 }

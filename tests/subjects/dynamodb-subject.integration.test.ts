@@ -141,35 +141,48 @@ describe('DynamoDB Subject Integration', () => {
   });
 
   describe('BehaviorSubject', () => {
-    it('getValue$() returns current record from DynamoDB', async () => {
-      // Insert a record directly
-      await firstValueFrom(
-        controller.put({ id: 'bs-get', data: 'behavior value' })
+    it('getValue() returns initial value before any events', () => {
+      const initial: TestRecord = { id: 'init', data: 'initial' };
+      const subject = new BehaviorSubject<TestRecord>(initial).withController(
+        controller
       );
 
-      const subject = new BehaviorSubject<TestRecord>({
-        id: '',
-        data: '',
-      }).withController(controller, { id: 'bs-get' });
-
-      const value = await firstValueFrom(subject.getValue$());
-
-      expect(value).toBeDefined();
-      expect(value).toEqual({ id: 'bs-get', data: 'behavior value' });
+      expect(subject.getValue()).toEqual(initial);
     });
 
-    it('getValue$() returns undefined for non-existent key', async () => {
-      const subject = new BehaviorSubject<TestRecord>({
-        id: '',
-        data: '',
-      }).withController(controller, { id: 'no-such-key' });
+    it('subscribe() emits initial value then stream events', async () => {
+      // Seed to ensure stream has shards
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const value = await firstValueFrom(subject.getValue$());
+      const initial: TestRecord = { id: 'hello', data: 'initial' };
+      const subject = new BehaviorSubject<TestRecord>(initial).withController(
+        controller
+      );
 
-      expect(value).toBeUndefined();
+      const values: TestRecord[] = [];
+      const sub = subject.subscribe((v) => values.push(v));
+      subscriptions.push(sub);
+
+      // Initial value should be emitted immediately
+      expect(values).toEqual([initial]);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      subject.next({ id: 'hello', data: 'world' });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      subject.next({ id: 'world', data: 'world' });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(values).toEqual([
+        { id: 'hello', data: 'initial' },
+        { id: 'hello', data: 'world' },
+        { id: 'world', data: 'world' },
+      ]);
     });
 
-    it('next() writes and stream delivers to subscribers', async () => {
+    it('getValue() updates after stream event arrives', async () => {
       // Seed to ensure stream has shards
       await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -177,7 +190,36 @@ describe('DynamoDB Subject Integration', () => {
       const subject = new BehaviorSubject<TestRecord>({
         id: '',
         data: '',
-      }).withController(controller, { id: 'bs-next' });
+      }).withController(controller);
+
+      // Wait for stream polling to start
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Write via controller — stream will update the cached value
+      await firstValueFrom(
+        controller.put({ id: 'gv-1', data: 'from controller' })
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      expect(subject.getValue()).toEqual({
+        id: 'gv-1',
+        data: 'from controller',
+      });
+    });
+
+    it('next() delivers multiple events and getValue() tracks latest', async () => {
+      // Seed to ensure stream has shards
+      await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const initial: TestRecord = { id: 'init', data: 'initial' };
+      const subject = new BehaviorSubject<TestRecord>(initial).withController(
+        controller
+      );
+
+      // getValue() should be initial before any stream events
+      expect(subject.getValue()).toEqual(initial);
 
       const values: TestRecord[] = [];
       const sub = subject.subscribe((value) => {
@@ -187,27 +229,39 @@ describe('DynamoDB Subject Integration', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      subject.next({ id: 'bs-next', data: 'from behavior subject' });
-
+      // Write two events via next()
+      subject.next({ id: 'bs-1', data: 'first' });
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const received = values.find((v) => v.id === 'bs-next');
-      expect(received).toBeDefined();
-      expect(received).toEqual({
-        id: 'bs-next',
-        data: 'from behavior subject',
-      });
+      subject.next({ id: 'bs-2', data: 'second' });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // First emission should be the initial value
+      expect(values[0]).toEqual(initial);
+
+      // Subscriber should have received both stream events
+      const first = values.find((v) => v.id === 'bs-1');
+      const second = values.find((v) => v.id === 'bs-2');
+      expect(first).toBeDefined();
+      expect(first).toEqual({ id: 'bs-1', data: 'first' });
+      expect(second).toBeDefined();
+      expect(second).toEqual({ id: 'bs-2', data: 'second' });
+
+      // getValue() should reflect the latest stream event
+      expect(subject.getValue()).toEqual({ id: 'bs-2', data: 'second' });
     });
 
-    it('subscribe() receives controller events', async () => {
+    it('subscribe() receives multiple controller events and getValue() stays in sync', async () => {
       // Seed to ensure stream has shards
       await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const subject = new BehaviorSubject<TestRecord>({
-        id: '',
-        data: '',
-      }).withController(controller, { id: 'bs-ctrl' });
+      const initial: TestRecord = { id: 'init', data: 'initial' };
+      const subject = new BehaviorSubject<TestRecord>(initial).withController(
+        controller
+      );
+
+      expect(subject.getValue()).toEqual(initial);
 
       const values: TestRecord[] = [];
       const sub = subject.subscribe((value) => {
@@ -217,27 +271,33 @@ describe('DynamoDB Subject Integration', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Write directly via controller
+      // Write two events directly via controller
       await firstValueFrom(
-        controller.put({ id: 'bs-ctrl', data: 'from controller' })
+        controller.put({ id: 'bs-c1', data: 'controller first' })
       );
-
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const received = values.find((v) => v.id === 'bs-ctrl');
-      expect(received).toBeDefined();
-      expect(received).toEqual({ id: 'bs-ctrl', data: 'from controller' });
-    });
-
-    it('getValue() throws when wired to a controller', () => {
-      const subject = new BehaviorSubject<TestRecord>({
-        id: '',
-        data: '',
-      }).withController(controller, { id: 'any' });
-
-      expect(() => subject.getValue()).toThrow(
-        'Cannot use getValue() on a controller-wired BehaviorSubject'
+      await firstValueFrom(
+        controller.put({ id: 'bs-c2', data: 'controller second' })
       );
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // First emission should be the initial value
+      expect(values[0]).toEqual(initial);
+
+      // Subscriber should have received both stream events
+      const first = values.find((v) => v.id === 'bs-c1');
+      const second = values.find((v) => v.id === 'bs-c2');
+      expect(first).toBeDefined();
+      expect(first).toEqual({ id: 'bs-c1', data: 'controller first' });
+      expect(second).toBeDefined();
+      expect(second).toEqual({ id: 'bs-c2', data: 'controller second' });
+
+      // getValue() should reflect the latest stream event
+      expect(subject.getValue()).toEqual({
+        id: 'bs-c2',
+        data: 'controller second',
+      });
     });
   });
 
