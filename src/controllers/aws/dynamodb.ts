@@ -399,7 +399,6 @@ export class DynamoDBController<T = unknown> extends Controller<
         type: 'modified',
         key,
         value: newImage,
-        ...(oldImage !== undefined ? { previousValue: oldImage } : {}),
         ...base,
       };
     } else if (eventName === 'REMOVE') {

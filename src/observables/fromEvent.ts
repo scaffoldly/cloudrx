@@ -14,7 +14,6 @@ import { Controller, ControllerEvent, EventType } from '../controllers';
  * // Listen for modifications (INSERT/MODIFY)
  * fromEvent(controller, 'modified').subscribe(event => {
  *   console.log('Key:', event.key, 'Value:', event.value);
- *   if (event.previousValue) console.log('Was:', event.previousValue);
  * });
  *
  * // Listen for removals (manual deletes)

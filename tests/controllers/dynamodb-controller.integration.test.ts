@@ -206,12 +206,6 @@ describe('DynamoDBController Integration', () => {
       // Verify exact event content matches the modification
       expect(modifyEvent!.type).toBe('modified');
       expect(modifyEvent!.eventName).toBe('MODIFY');
-      expect(
-        modifyEvent!.type === 'modified' && modifyEvent!.previousValue
-      ).toEqual({
-        id: 'test-2',
-        data: 'original',
-      });
       expect(modifyEvent!.value).toEqual({
         id: 'test-2',
         data: 'updated',

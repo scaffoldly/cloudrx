@@ -32,7 +32,7 @@ export type ControllerKey = string | number | Record<string, unknown>;
  * Discriminated union for controller state-change events.
  *
  * The `type` field determines which fields are present:
- * - `modified`: `key`, `value`, and optional `previousValue`
+ * - `modified`: `key` and `value`
  * - `removed`: `key` and `value` (the removed record)
  * - `expired`: `key` and `value` (the expired record)
  *
@@ -43,7 +43,7 @@ export type ControllerEvent<
   K extends ControllerKey = ControllerKey,
   V = unknown,
 > =
-  | { type: 'modified'; key: K; value: V; previousValue?: V }
+  | { type: 'modified'; key: K; value: V }
   | { type: 'removed'; key: K; value: V }
   | { type: 'expired'; key: K; value: V };
 
