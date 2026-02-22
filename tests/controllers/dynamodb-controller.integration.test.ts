@@ -4,7 +4,7 @@ import {
   DynamoDBClientConfig,
   TableDescription,
 } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { fromEvent, Controller } from 'cloudrx';
 import {
   DynamoDBController,
@@ -112,15 +112,8 @@ describe('DynamoDBController Integration', () => {
 
   describe('event streaming', () => {
     it('emits modified event on INSERT', async () => {
-      const tableName = table.TableName!;
-
-      // Insert a record first to ensure stream has shards
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'seed', data: 'seed record' },
-        })
-      );
+      // Seed record to ensure stream has shards
+      controller.put({ id: 'seed', data: 'seed record' });
 
       // Wait for shard to be created
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -157,15 +150,8 @@ describe('DynamoDBController Integration', () => {
     });
 
     it('emits modified event on MODIFY', async () => {
-      const tableName = table.TableName!;
-
-      // First insert to create the record and shard
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'test-2', data: 'original' },
-        })
-      );
+      // Seed record to create the record and shard
+      controller.put({ id: 'test-2', data: 'original' });
 
       // Wait for shard to be created
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -202,15 +188,8 @@ describe('DynamoDBController Integration', () => {
     });
 
     it('emits removed event on DELETE', async () => {
-      const tableName = table.TableName!;
-
-      // First insert
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'test-3', data: 'to-delete' },
-        })
-      );
+      // Seed record
+      controller.put({ id: 'test-3', data: 'to-delete' });
 
       // Wait for insert
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -247,15 +226,8 @@ describe('DynamoDBController Integration', () => {
 
   describe('observable factory', () => {
     it('from$() creates controller that receives events', async () => {
-      const tableName = table.TableName!;
-
       // Seed record to create shard
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'seed', data: 'seed' },
-        })
-      );
+      controller.put({ id: 'seed', data: 'seed' });
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Clear cache first
@@ -302,15 +274,8 @@ describe('DynamoDBController Integration', () => {
 
   describe('multiple subscribers', () => {
     it('delivers events to all subscribers', async () => {
-      const tableName = table.TableName!;
-
       // Seed record to create shard
-      await docClient.send(
-        new PutCommand({
-          TableName: tableName,
-          Item: { id: 'seed', data: 'seed' },
-        })
-      );
+      controller.put({ id: 'seed', data: 'seed' });
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       const events1: DynamoDBEvent<TestRecord>[] = [];
