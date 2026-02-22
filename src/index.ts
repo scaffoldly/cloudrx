@@ -20,7 +20,7 @@ export {
 } from './providers';
 
 // Subjects - Observable-like classes
-export { CloudReplaySubject } from './subjects';
+export { CloudReplaySubject, Subject } from './subjects';
 
 // Utilities - Helper types and functions
 export { Logger, InfoLogger } from './util';
