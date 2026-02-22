@@ -18,7 +18,7 @@ module.exports = [
       'examples/**/*.ts',
     ],
   },
-  
+
   // ESLint config file itself
   {
     files: ['eslint.config.js'],
@@ -28,10 +28,10 @@ module.exports = [
       },
     },
   },
-  
+
   // Base JavaScript config
   js.configs.recommended,
-  
+
   // TypeScript files
   {
     files: ['**/*.ts'],
@@ -56,7 +56,7 @@ module.exports = [
       ...prettierConfig.rules,
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'error',
@@ -66,7 +66,7 @@ module.exports = [
       'prettier/prettier': 'error',
     },
   },
-  
+
   // Test files
   {
     files: ['tests/**/*.ts', 'integration-tests/**/*.ts'],
@@ -91,7 +91,7 @@ module.exports = [
       ...prettierConfig.rules,
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'error',
@@ -99,7 +99,7 @@ module.exports = [
       'prettier/prettier': 'error',
     },
   },
-  
+
   // Example files
   {
     files: ['examples/**/*.js'],
