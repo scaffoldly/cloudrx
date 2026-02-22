@@ -25,6 +25,10 @@ import { Controller, ControllerEvent, EventType } from '../controllers';
  * fromEvent(controller, 'expired').subscribe(event => {
  *   console.log('Expired:', event.key, event.value);
  * });
+ *
+ * // Write and delete items (returns Observable<void>)
+ * controller.put({ id: '123', name: 'Alice' }).subscribe();
+ * controller.remove({ id: '123' }).subscribe();
  * ```
  *
  * @param target The Controller to listen to
