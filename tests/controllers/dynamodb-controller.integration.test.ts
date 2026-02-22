@@ -1,12 +1,14 @@
 import { Subscription, firstValueFrom, toArray } from 'rxjs';
 import {
   DynamoDBClient,
-  PutItemCommand,
-  DeleteItemCommand,
+  DynamoDBClientConfig,
   TableDescription,
 } from '@aws-sdk/client-dynamodb';
-import { DynamoDBStreamsClient } from '@aws-sdk/client-dynamodb-streams';
-import { marshall } from '@aws-sdk/util-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  DeleteCommand,
+} from '@aws-sdk/lib-dynamodb';
 import { fromEvent, Controller } from 'cloudrx';
 import {
   DynamoDBController,
@@ -16,8 +18,8 @@ import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
 
 describe('DynamoDBController Integration', () => {
   let container: DynamoDBLocalContainer;
-  let dynamoDBClient: DynamoDBClient;
-  let streamsClient: DynamoDBStreamsClient;
+  let clientConfig: DynamoDBClientConfig;
+  let docClient: DynamoDBDocumentClient;
   let controller: Controller<DynamoDBEvent<TestRecord>>;
   let subscriptions: Subscription[] = [];
   let table: TableDescription;
@@ -39,7 +41,7 @@ describe('DynamoDBController Integration', () => {
       '@aws-sdk/client-dynamodb'
     );
 
-    await dynamoDBClient.send(
+    await docClient.send(
       new CreateTableCommand({
         TableName: tableName,
         KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
@@ -55,7 +57,7 @@ describe('DynamoDBController Integration', () => {
     // Wait for table to be active
     let tableDescription: TableDescription | undefined;
     for (let i = 0; i < 30; i++) {
-      const response = await dynamoDBClient.send(
+      const response = await docClient.send(
         new DescribeTableCommand({ TableName: tableName })
       );
       if (response.Table?.TableStatus === 'ACTIVE') {
@@ -76,17 +78,12 @@ describe('DynamoDBController Integration', () => {
     container = new DynamoDBLocalContainer();
     await container.start();
 
-    const endpoint = container.getEndpoint();
-    dynamoDBClient = new DynamoDBClient({
-      endpoint,
+    clientConfig = {
+      endpoint: container.getEndpoint(),
       region: 'local',
       credentials: { accessKeyId: 'fake', secretAccessKey: 'fake' },
-    });
-    streamsClient = new DynamoDBStreamsClient({
-      endpoint,
-      region: 'local',
-      credentials: { accessKeyId: 'fake', secretAccessKey: 'fake' },
-    });
+    };
+    docClient = DynamoDBDocumentClient.from(new DynamoDBClient(clientConfig));
   });
 
   afterAll(async () => {
@@ -107,8 +104,7 @@ describe('DynamoDBController Integration', () => {
 
     // Create controller
     controller = DynamoDBController.from<TestRecord>(table, {
-      dynamoDBClient,
-      streamsClient,
+      clientConfig,
       pollInterval: 100, // Fast polling for tests
     });
   });
@@ -123,10 +119,10 @@ describe('DynamoDBController Integration', () => {
       const tableName = table.TableName!;
 
       // Insert a record first to ensure stream has shards
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'seed', data: 'seed record' }),
+          Item: { id: 'seed', data: 'seed record' },
         })
       );
 
@@ -143,10 +139,10 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert another record
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'test-1', data: 'hello world' }),
+          Item: { id: 'test-1', data: 'hello world' },
         })
       );
 
@@ -176,10 +172,10 @@ describe('DynamoDBController Integration', () => {
       const tableName = table.TableName!;
 
       // First insert to create the record and shard
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'test-2', data: 'original' }),
+          Item: { id: 'test-2', data: 'original' },
         })
       );
 
@@ -197,10 +193,10 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Update the record
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'test-2', data: 'updated' }),
+          Item: { id: 'test-2', data: 'updated' },
         })
       );
 
@@ -230,10 +226,10 @@ describe('DynamoDBController Integration', () => {
       const tableName = table.TableName!;
 
       // First insert
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'test-3', data: 'to-delete' }),
+          Item: { id: 'test-3', data: 'to-delete' },
         })
       );
 
@@ -248,10 +244,10 @@ describe('DynamoDBController Integration', () => {
       subscriptions.push(sub);
 
       // Delete the record
-      await dynamoDBClient.send(
-        new DeleteItemCommand({
+      await docClient.send(
+        new DeleteCommand({
           TableName: tableName,
-          Key: marshall({ id: 'test-3' }),
+          Key: { id: 'test-3' },
         })
       );
 
@@ -283,10 +279,10 @@ describe('DynamoDBController Integration', () => {
       const tableName = table.TableName!;
 
       // Seed record to create shard
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'seed', data: 'seed' }),
+          Item: { id: 'seed', data: 'seed' },
         })
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -297,8 +293,7 @@ describe('DynamoDBController Integration', () => {
       ).instances.clear();
 
       const controller$ = DynamoDBController.from$<TestRecord>(table, {
-        dynamoDBClient,
-        streamsClient,
+        clientConfig,
         pollInterval: 100,
       });
 
@@ -313,10 +308,10 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert a record
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'obs-test', data: 'from observable' }),
+          Item: { id: 'obs-test', data: 'from observable' },
         })
       );
 
@@ -347,10 +342,10 @@ describe('DynamoDBController Integration', () => {
       const tableName = table.TableName!;
 
       // Seed record to create shard
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'seed', data: 'seed' }),
+          Item: { id: 'seed', data: 'seed' },
         })
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -370,10 +365,10 @@ describe('DynamoDBController Integration', () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Insert a record
-      await dynamoDBClient.send(
-        new PutItemCommand({
+      await docClient.send(
+        new PutCommand({
           TableName: tableName,
-          Item: marshall({ id: 'multi-test', data: 'shared' }),
+          Item: { id: 'multi-test', data: 'shared' },
         })
       );
 

@@ -8,7 +8,12 @@ import {
   expand,
   retry,
 } from 'rxjs/operators';
-import { DynamoDBClient, TableDescription } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBClient,
+  DynamoDBClientConfig,
+  TableDescription,
+} from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   DynamoDBStreamsClient,
   DescribeStreamCommand,
@@ -31,10 +36,8 @@ import {
  * Configuration options for DynamoDBController
  */
 export interface DynamoDBControllerOptions extends ControllerOptions {
-  /** DynamoDB client - if not provided, uses default */
-  dynamoDBClient?: DynamoDBClient;
-  /** DynamoDB Streams client - if not provided, uses default */
-  streamsClient?: DynamoDBStreamsClient;
+  /** AWS client configuration for constructing DynamoDB and Streams clients */
+  clientConfig?: DynamoDBClientConfig;
   /** Polling interval in ms (default: 5000) */
   pollInterval?: number;
   /** TTL attribute name (default: 'expires'), null to disable TTL detection */
@@ -134,8 +137,8 @@ export class DynamoDBController<T = unknown> extends Controller<
   private readonly ttlAttribute: string | null;
   private readonly pollInterval: number;
 
-  // AWS clients (dynamoDBClient kept for future use)
-  private readonly _dynamoDBClient: DynamoDBClient;
+  // AWS clients
+  private readonly _dynamoDBClient: DynamoDBDocumentClient;
   private readonly streamsClient: DynamoDBStreamsClient;
 
   // Shard management
@@ -156,8 +159,11 @@ export class DynamoDBController<T = unknown> extends Controller<
     this.ttlAttribute =
       'ttlAttribute' in options ? (options.ttlAttribute ?? null) : 'expires';
     this.pollInterval = options.pollInterval ?? 5000;
-    this._dynamoDBClient = options.dynamoDBClient ?? new DynamoDBClient({});
-    this.streamsClient = options.streamsClient ?? new DynamoDBStreamsClient({});
+    const clientConfig = options.clientConfig ?? {};
+    this._dynamoDBClient = DynamoDBDocumentClient.from(
+      new DynamoDBClient(clientConfig)
+    );
+    this.streamsClient = new DynamoDBStreamsClient(clientConfig);
   }
 
   /**
@@ -282,6 +288,10 @@ export class DynamoDBController<T = unknown> extends Controller<
   protected override onDispose(): void {
     // Remove from singleton cache
     DynamoDBController.instances.delete(this.tableArn);
+
+    // Destroy AWS clients
+    this._dynamoDBClient.destroy();
+    this.streamsClient.destroy();
   }
 
   private discoverShards(): Observable<Shard[]> {

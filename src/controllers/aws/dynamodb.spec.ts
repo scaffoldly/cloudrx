@@ -1,10 +1,7 @@
 /* global describe, it, beforeEach, afterEach, expect, jest */
 import { Subscription } from 'rxjs';
-import { DynamoDBClient, TableDescription } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBStreamsClient,
-  _Record,
-} from '@aws-sdk/client-dynamodb-streams';
+import { TableDescription } from '@aws-sdk/client-dynamodb';
+import { _Record } from '@aws-sdk/client-dynamodb-streams';
 import { fromEvent } from '../../observables/fromEvent';
 import { Abortable } from '../../util/abortable';
 import { Controller } from '..';
@@ -14,10 +11,37 @@ import {
   DynamoDBControllerOptions,
 } from './dynamodb';
 
-// Mock AWS SDK
+// Mock AWS SDK constructors so the controller uses our mockSend
 const mockSend = jest.fn();
-const mockDynamoDBClient = { send: mockSend };
-const mockStreamsClient = { send: mockSend };
+const mockDestroy = jest.fn();
+const mockClient = { send: mockSend, destroy: mockDestroy };
+
+jest.mock('@aws-sdk/client-dynamodb', () => {
+  const actual = jest.requireActual('@aws-sdk/client-dynamodb');
+  return {
+    ...actual,
+    DynamoDBClient: jest.fn().mockImplementation(() => mockClient),
+  };
+});
+
+jest.mock('@aws-sdk/lib-dynamodb', () => {
+  const actual = jest.requireActual('@aws-sdk/lib-dynamodb');
+  return {
+    ...actual,
+    DynamoDBDocumentClient: {
+      ...actual.DynamoDBDocumentClient,
+      from: jest.fn().mockImplementation(() => mockClient),
+    },
+  };
+});
+
+jest.mock('@aws-sdk/client-dynamodb-streams', () => {
+  const actual = jest.requireActual('@aws-sdk/client-dynamodb-streams');
+  return {
+    ...actual,
+    DynamoDBStreamsClient: jest.fn().mockImplementation(() => mockClient),
+  };
+});
 
 // Helper to create mock TableDescription
 function createMockTableDescription(
@@ -90,8 +114,6 @@ function createMockController<T = unknown>(
   });
 
   const controllerOptions: DynamoDBControllerOptions = {
-    dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-    streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
     pollInterval: 100,
     ...options,
   };
@@ -411,6 +433,16 @@ describe('DynamoDBController', () => {
       expect(tree.children[0]?.name).toContain('DynamoDBController:');
     });
 
+    it('destroys AWS clients on dispose', () => {
+      controller = createMockController();
+      mockDestroy.mockClear();
+
+      controller.dispose();
+
+      // Both the document client and streams client should be destroyed
+      expect(mockDestroy).toHaveBeenCalledTimes(2);
+    });
+
     it('dispose is idempotent (can be called multiple times)', () => {
       controller = createMockController();
 
@@ -501,12 +533,7 @@ describe('DynamoDBController', () => {
         'arn:aws:dynamodb:us-east-1:123456789:table/obs-test'
       );
 
-      const controllerOptions: DynamoDBControllerOptions = {
-        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
-      };
-
-      const controller$ = DynamoDBController.from$(table, controllerOptions);
+      const controller$ = DynamoDBController.from$(table);
 
       const emittedController = await new Promise<
         Controller<DynamoDBEvent<unknown>>
@@ -562,8 +589,6 @@ describe('DynamoDBController', () => {
 
       const table = createMockTableDescription();
       controller = DynamoDBController.from(table, {
-        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
         pollInterval: 50,
       });
 
@@ -634,8 +659,6 @@ describe('DynamoDBController', () => {
 
       const table = createMockTableDescription();
       controller = DynamoDBController.from(table, {
-        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
         pollInterval: 50,
       });
 
@@ -709,8 +732,6 @@ describe('DynamoDBController', () => {
 
       const table = createMockTableDescription();
       controller = DynamoDBController.from(table, {
-        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
         pollInterval: 50,
       });
 
@@ -831,8 +852,6 @@ describe('DynamoDBController', () => {
 
       const table = createMockTableDescription();
       controller = DynamoDBController.from(table, {
-        dynamoDBClient: mockDynamoDBClient as unknown as DynamoDBClient,
-        streamsClient: mockStreamsClient as unknown as DynamoDBStreamsClient,
         pollInterval: 50,
       });
 
