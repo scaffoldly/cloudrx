@@ -11,6 +11,12 @@ import {
   DynamoDBEvent,
 } from '../../src/controllers/aws/dynamodb';
 import { DynamoDBLocalContainer } from '../providers/aws/dynamodb/local';
+import {
+  uniqueTableName,
+  createTable,
+  createClientConfig,
+  clearControllerCache,
+} from '../helpers/dynamodb';
 
 describe('DynamoDBController Integration', () => {
   let container: DynamoDBLocalContainer;
@@ -26,59 +32,11 @@ describe('DynamoDBController Integration', () => {
     expires?: number;
   };
 
-  // Helper to generate unique table names
-  function uniqueTableName(): string {
-    return `test-table-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  // Helper to create a table with streams enabled
-  async function createTable(tableName: string): Promise<TableDescription> {
-    const { CreateTableCommand, DescribeTableCommand } = await import(
-      '@aws-sdk/client-dynamodb'
-    );
-
-    await docClient.send(
-      new CreateTableCommand({
-        TableName: tableName,
-        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
-        AttributeDefinitions: [{ AttributeName: 'id', AttributeType: 'S' }],
-        BillingMode: 'PAY_PER_REQUEST',
-        StreamSpecification: {
-          StreamEnabled: true,
-          StreamViewType: 'NEW_AND_OLD_IMAGES',
-        },
-      })
-    );
-
-    // Wait for table to be active
-    let tableDescription: TableDescription | undefined;
-    for (let i = 0; i < 30; i++) {
-      const response = await docClient.send(
-        new DescribeTableCommand({ TableName: tableName })
-      );
-      if (response.Table?.TableStatus === 'ACTIVE') {
-        tableDescription = response.Table;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    if (!tableDescription) {
-      throw new Error('Table did not become active');
-    }
-
-    return tableDescription;
-  }
-
   beforeAll(async () => {
     container = new DynamoDBLocalContainer();
     await container.start();
 
-    clientConfig = {
-      endpoint: container.getEndpoint(),
-      region: 'local',
-      credentials: { accessKeyId: 'fake', secretAccessKey: 'fake' },
-    };
+    clientConfig = createClientConfig(container);
     docClient = DynamoDBDocumentClient.from(new DynamoDBClient(clientConfig));
   });
 
@@ -89,14 +47,11 @@ describe('DynamoDBController Integration', () => {
   beforeEach(async () => {
     subscriptions = [];
 
-    // Clear singleton cache
-    (
-      DynamoDBController as unknown as { instances: Map<string, unknown> }
-    ).instances.clear();
+    clearControllerCache();
 
     // Create a fresh table for each test
     const tableName = uniqueTableName();
-    table = await createTable(tableName);
+    table = await createTable(docClient, tableName);
 
     // Create controller
     controller = DynamoDBController.from<TestRecord>(table, {
@@ -232,10 +187,7 @@ describe('DynamoDBController Integration', () => {
       await firstValueFrom(controller.put({ id: 'seed', data: 'seed' }));
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Clear cache first
-      (
-        DynamoDBController as unknown as { instances: Map<string, unknown> }
-      ).instances.clear();
+      clearControllerCache();
 
       const controller$ = DynamoDBController.from$<TestRecord>(table, {
         clientConfig,
